@@ -1,0 +1,12 @@
+c	Lnet/fabricmc/fabric/api/biome/v1/BiomeModification;	Lnet/fabricmc/fabric/api/biome/v1/BiomeModification;
+	m	<init>(Lnet/minecraft/resources/Identifier;)V	<init>(Lnet/minecraft/resources/Identifier;)V
+		ma	0	0
+	m	add(Lnet/fabricmc/fabric/api/biome/v1/ModificationPhase;Ljava/util/function/Predicate;Ljava/util/function/Consumer;)Lnet/fabricmc/fabric/api/biome/v1/BiomeModification;	add(Lnet/fabricmc/fabric/api/biome/v1/ModificationPhase;Ljava/util/function/Predicate;Ljava/util/function/Consumer;)Lnet/fabricmc/fabric/api/biome/v1/BiomeModification;
+		ma	0	0
+		ma	1	1
+		ma	2	2
+	m	add(Lnet/fabricmc/fabric/api/biome/v1/ModificationPhase;Ljava/util/function/Predicate;Ljava/util/function/BiConsumer;)Lnet/fabricmc/fabric/api/biome/v1/BiomeModification;	add(Lnet/fabricmc/fabric/api/biome/v1/ModificationPhase;Ljava/util/function/Predicate;Ljava/util/function/BiConsumer;)Lnet/fabricmc/fabric/api/biome/v1/BiomeModification;
+		ma	0	0
+		ma	1	1
+		ma	2	2
+	f	id;;Lnet/minecraft/resources/Identifier;	id;;Lnet/minecraft/resources/Identifier;

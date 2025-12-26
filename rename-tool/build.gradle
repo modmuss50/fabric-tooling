@@ -1,0 +1,13 @@
+plugins {
+	id "java-library"
+	id "fabric-java-21"
+	id "fabric-java-formatting"
+	id "fabric-java-publishing"
+	id "fabric-versioning"
+}
+
+version = "0.1.2"
+
+dependencies {
+	api 'net.fabricmc:mapping-io:0.8.0'
+}
