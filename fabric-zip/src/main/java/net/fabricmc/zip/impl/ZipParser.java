@@ -42,6 +42,10 @@ final class ZipParser {
 	}
 
 	static List<EntryData> parse(ZipByteSource source) throws IOException {
+		return parseArchive(source).entries();
+	}
+
+	static ParsedZip parseArchive(ZipByteSource source) throws IOException {
 		long size = source.size();
 		EndOfCentralDirectory endOfCentralDirectory = locateEndOfCentralDirectory(source, size);
 
@@ -144,7 +148,7 @@ final class ZipParser {
 			position += ZipConstants.CENTRAL_DIRECTORY_HEADER_LENGTH + variableLength;
 		}
 
-		return entries;
+		return new ParsedZip(entries, centralDirectory.offset, size - centralDirectory.offset);
 	}
 
 	private static CentralDirectory resolveCentralDirectory(ZipByteSource source, EndOfCentralDirectory endOfCentralDirectory) throws IOException {
@@ -410,5 +414,8 @@ final class ZipParser {
 			@Nullable FileTime lastAccessTime,
 			@Nullable FileTime creationTime
 	) {
+	}
+
+	record ParsedZip(List<EntryData> entries, long centralDirectoryOffset, long trailingMetadataLength) {
 	}
 }

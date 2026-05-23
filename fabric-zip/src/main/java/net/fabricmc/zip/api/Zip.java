@@ -16,11 +16,52 @@
 
 package net.fabricmc.zip.api;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Path;
+import java.util.Objects;
+import java.util.function.Consumer;
+
 import org.jetbrains.annotations.ApiStatus;
 
+import net.fabricmc.zip.impl.ZipImpl;
+
 /**
- * A mutable ZIP archive placeholder.
+ * A mutable ZIP archive.
  */
 @ApiStatus.NonExtendable
 public interface Zip extends ZipView {
+	static Zip create(Path path) throws IOException {
+		return create(path, ignored -> {
+		});
+	}
+
+	static Zip create(Path path, Consumer<ZipOptions.Builder> options) throws IOException {
+		return ZipImpl.create(path, ZipOptions.configure(options));
+	}
+
+	static Zip open(Path path) throws IOException {
+		return open(path, ignored -> {
+		});
+	}
+
+	static Zip open(Path path, Consumer<ZipOptions.Builder> options) throws IOException {
+		return ZipImpl.open(path, ZipOptions.configure(options));
+	}
+
+	void add(String name, byte[] data) throws IOException;
+
+	void add(String name, InputStream data) throws IOException;
+
+	void remove(String name) throws IOException;
+
+	void copy(ZipView source, String name) throws IOException;
+
+	static void requireName(String name) {
+		Objects.requireNonNull(name, "name");
+
+		if (name.isEmpty()) {
+			throw new IllegalArgumentException("ZIP entry names must not be empty");
+		}
+	}
 }
