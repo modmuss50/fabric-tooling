@@ -32,8 +32,8 @@ import java.util.concurrent.Future;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import net.fabricmc.zip.api.ZipFileView;
 import net.fabricmc.zip.api.ZipReference;
+import net.fabricmc.zip.api.ZipView;
 
 public class ZipReferenceTest {
 	@TempDir
@@ -42,15 +42,15 @@ public class ZipReferenceTest {
 	@Test
 	void closesSharedViewAfterLastReference() throws Exception {
 		Path path = writeZip("shared.zip", builder -> builder.addStored("shared.txt", "shared".getBytes()));
-		ZipReference<ZipFileView> first = ZipReference.openView(path);
-		ZipReference<ZipFileView> second = ZipReference.openView(path);
+		ZipReference<ZipView> first = ZipReference.openView(path);
+		ZipReference<ZipView> second = ZipReference.openView(path);
 
 		first.close();
 		assertEquals("shared", new String(readAllBytes(second.get().open(second.get().getEntry("shared.txt").orElseThrow()))));
 
 		second.close();
 
-		try (ZipReference<ZipFileView> reopened = ZipReference.openView(path)) {
+		try (ZipReference<ZipView> reopened = ZipReference.openView(path)) {
 			assertEquals("shared", new String(readAllBytes(reopened.get().open(reopened.get().getEntry("shared.txt").orElseThrow()))));
 		}
 	}
@@ -59,8 +59,8 @@ public class ZipReferenceTest {
 	void repeatedOpenOfSamePathSharesUnderlyingView() throws Exception {
 		Path path = writeZip("same-view.zip", builder -> builder.addStored("value.txt", "same".getBytes()));
 
-		try (ZipReference<ZipFileView> first = ZipReference.openView(path);
-				ZipReference<ZipFileView> second = ZipReference.openView(path)) {
+		try (ZipReference<ZipView> first = ZipReference.openView(path);
+				ZipReference<ZipView> second = ZipReference.openView(path)) {
 			assertTrue(first.get() == second.get());
 		}
 	}
@@ -68,7 +68,7 @@ public class ZipReferenceTest {
 	@Test
 	void closedReferenceCannotBeUsed() throws Exception {
 		Path path = writeZip("closed.zip", builder -> builder.addStored("entry.txt", "value".getBytes()));
-		ZipReference<ZipFileView> reference = ZipReference.openView(path);
+		ZipReference<ZipView> reference = ZipReference.openView(path);
 		reference.close();
 
 		assertThrows(IllegalStateException.class, reference::get);
@@ -81,8 +81,8 @@ public class ZipReferenceTest {
 			builder.addDeflated("b.txt", "beta".getBytes());
 		});
 
-		try (ZipReference<ZipFileView> first = ZipReference.openView(path);
-				ZipReference<ZipFileView> second = ZipReference.openView(path);
+		try (ZipReference<ZipView> first = ZipReference.openView(path);
+				ZipReference<ZipView> second = ZipReference.openView(path);
 				var executor = Executors.newFixedThreadPool(2)) {
 			Future<byte[]> firstFuture = executor.submit(readEntry(first, "a.txt"));
 			Future<byte[]> secondFuture = executor.submit(readEntry(second, "b.txt"));
@@ -100,7 +100,7 @@ public class ZipReferenceTest {
 		return path;
 	}
 
-	private static Callable<byte[]> readEntry(ZipReference<ZipFileView> reference, String name) {
+	private static Callable<byte[]> readEntry(ZipReference<ZipView> reference, String name) {
 		return () -> readAllBytes(reference.get().open(reference.get().getEntry(name).orElseThrow()));
 	}
 

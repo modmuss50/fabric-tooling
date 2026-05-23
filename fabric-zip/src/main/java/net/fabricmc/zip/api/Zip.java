@@ -22,5 +22,5 @@ import org.jetbrains.annotations.ApiStatus;
  * A mutable ZIP archive placeholder.
  */
 @ApiStatus.NonExtendable
-public interface Zip extends ZipFileView {
+public interface Zip extends ZipView {
 }

@@ -31,10 +31,9 @@ import net.fabricmc.zip.api.CompressionCodec;
 import net.fabricmc.zip.api.MalformedZipException;
 import net.fabricmc.zip.api.ZipByteSource;
 import net.fabricmc.zip.api.ZipEntryView;
-import net.fabricmc.zip.api.ZipFileView;
 import net.fabricmc.zip.api.ZipView;
 
-public final class ZipViewImpl implements ZipFileView {
+public final class ZipViewImpl implements ZipView {
 	private final ZipByteSource source;
 	private final CompressionCodec compressionCodec;
 	private final List<ZipEntryView> entries;

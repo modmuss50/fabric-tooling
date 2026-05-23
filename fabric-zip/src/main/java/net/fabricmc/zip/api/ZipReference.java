@@ -28,9 +28,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * @param <T> the ZIP view type being shared.
  */
-public final class ZipReference<T extends ZipFileView> implements AutoCloseable {
+public final class ZipReference<T extends ZipView> implements AutoCloseable {
 	private static final Object OPEN_VIEWS_LOCK = new Object();
-	private static final Map<Path, SharedValue<ZipFileView>> OPEN_VIEWS = new HashMap<>();
+	private static final Map<Path, SharedValue<ZipView>> OPEN_VIEWS = new HashMap<>();
 
 	private final Path path;
 	private final SharedValue<T> sharedValue;
@@ -50,19 +50,19 @@ public final class ZipReference<T extends ZipFileView> implements AutoCloseable 
 	 * @return a reference-counted ZIP view.
 	 * @throws IOException if the archive cannot be opened.
 	 */
-	public static ZipReference<ZipFileView> openView(Path path) throws IOException {
+	public static ZipReference<ZipView> openView(Path path) throws IOException {
 		Path normalizedPath = normalizePath(path);
 
 		synchronized (OPEN_VIEWS_LOCK) {
-			SharedValue<ZipFileView> sharedView = OPEN_VIEWS.get(normalizedPath);
+			SharedValue<ZipView> sharedView = OPEN_VIEWS.get(normalizedPath);
 
 			if (sharedView != null) {
 				sharedView.retain();
 				return new ZipReference<>(normalizedPath, sharedView);
 			}
 
-			ZipFileView view = (ZipFileView) ZipView.open(normalizedPath);
-			SharedValue<ZipFileView> newSharedView = new SharedValue<>(view);
+			ZipView view = ZipView.open(normalizedPath);
+			SharedValue<ZipView> newSharedView = new SharedValue<>(view);
 			OPEN_VIEWS.put(normalizedPath, newSharedView);
 			return new ZipReference<>(normalizedPath, newSharedView);
 		}
@@ -108,7 +108,7 @@ public final class ZipReference<T extends ZipFileView> implements AutoCloseable 
 		return Objects.requireNonNull(path, "path").toAbsolutePath().normalize();
 	}
 
-	private static class SharedValue<T extends ZipFileView> {
+	private static class SharedValue<T extends ZipView> {
 		private final T value;
 		private int referenceCount = 1;
 

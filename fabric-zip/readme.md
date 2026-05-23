@@ -5,9 +5,8 @@ The current implementation is read-only, supports ZIP64, and is structured so wr
 
 ## API design
 
-- `ZipFileView` is the read-only ZIP contract.
-- `ZipView` currently defines the read-only operations and static factory methods for opening ZIPs.
-- `Zip` extends `ZipFileView` and is reserved for future mutable ZIP support.
+- `ZipView` is the read-only ZIP contract and includes the static factory methods for opening ZIPs.
+- `Zip` extends `ZipView` and is reserved for future mutable ZIP support.
 - `ZipEntryView` exposes entry metadata such as name, sizes, offsets, CRC, flags, timestamps, and `CompressionMethod`.
 - `ZipByteSource` is the random-access storage abstraction used by the implementation.
   The default implementation is path-backed, but the design leaves room for other backends later.
