@@ -29,6 +29,7 @@ import java.nio.file.Path;
 enum MacOsHolePuncher implements HolePuncher {
 	INSTANCE;
 
+	private static final long MINIMUM_HOLE_LENGTH = 4096L;
 	private static final int OPEN_READ_WRITE = 2;
 	private static final int F_PUNCHHOLE = 99;
 	private static final MemoryLayout FPUNCHHOLE_LAYOUT = MemoryLayout.structLayout(
@@ -40,6 +41,11 @@ enum MacOsHolePuncher implements HolePuncher {
 	private static final MethodHandle OPEN = downcall("open", FunctionDescriptor.of(java.lang.foreign.ValueLayout.JAVA_INT, java.lang.foreign.ValueLayout.ADDRESS, java.lang.foreign.ValueLayout.JAVA_INT));
 	private static final MethodHandle FCNTL = downcall("fcntl", FunctionDescriptor.of(java.lang.foreign.ValueLayout.JAVA_INT, java.lang.foreign.ValueLayout.JAVA_INT, java.lang.foreign.ValueLayout.JAVA_INT, java.lang.foreign.ValueLayout.ADDRESS));
 	private static final MethodHandle CLOSE = downcall("close", FunctionDescriptor.of(java.lang.foreign.ValueLayout.JAVA_INT, java.lang.foreign.ValueLayout.JAVA_INT));
+
+	@Override
+	public long minimumHoleLength() {
+		return MINIMUM_HOLE_LENGTH;
+	}
 
 	@Override
 	public void punch(Path path, long offset, long length) throws IOException {

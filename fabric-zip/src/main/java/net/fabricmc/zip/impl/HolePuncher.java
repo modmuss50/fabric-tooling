@@ -21,6 +21,8 @@ import java.nio.file.Path;
 import java.util.Locale;
 
 interface HolePuncher {
+	long minimumHoleLength();
+
 	void punch(Path path, long offset, long length) throws IOException;
 
 	static HolePuncher systemDefault() {

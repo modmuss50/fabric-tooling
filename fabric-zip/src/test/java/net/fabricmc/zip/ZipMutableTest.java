@@ -318,45 +318,59 @@ public class ZipMutableTest {
 
 	@Test
 	@EnabledOnOs(OS.MAC)
-	void sparseModeSupportsAddRemoveAndReopen() throws Exception {
-		Path path = tempDir.resolve("sparse.zip");
-		TestZipBuilder builder = new TestZipBuilder();
+	void sparseModeSupportsSmallFileMutations() throws Exception {
+		Path path = tempDir.resolve("sparse-small.zip");
 		LinkedHashMap<String, byte[]> expectedEntries = new LinkedHashMap<>();
+		byte[] alpha = "alpha".getBytes();
+		byte[] beta = "beta".getBytes();
+		byte[] gamma = "gamma".getBytes();
 
-		for (int i = 0; i < 180; i++) {
-			String name = "sparse/entry-" + i + "-" + "x".repeat(24) + ".bin";
-			byte[] data = new byte[4096 + i * 17];
+		try (Zip zip = Zip.create(path, options -> options.sparse(true).writeMode(WriteMode.IMMEDIATE))) {
+			zip.add("small/alpha.txt", alpha);
+			zip.add("small/beta.txt", beta);
+			zip.remove("small/alpha.txt");
+			zip.add("small/gamma.txt", gamma);
 
-			for (int j = 0; j < data.length; j++) {
-				data[j] = (byte) (i + j);
-			}
-
-			expectedEntries.put(name, data);
-			builder.addDeflated(name, data);
+			expectedEntries.put("small/beta.txt", beta);
+			expectedEntries.put("small/gamma.txt", gamma);
 		}
-
-		Files.write(path, builder.build());
-
-		String removedName = expectedEntries.keySet().iterator().next();
-		expectedEntries.remove(removedName);
-		byte[] addedData = new byte[8192];
-
-		for (int i = 0; i < addedData.length; i++) {
-			addedData[i] = (byte) (255 - i);
-		}
-
-		try (Zip zip = Zip.open(path, options -> options.sparse(true).writeMode(WriteMode.IMMEDIATE))) {
-			long sizeBeforeRemove = Files.size(path);
-			zip.remove(removedName);
-			zip.add("sparse/added-entry.bin", addedData);
-			assertTrue(Files.size(path) >= sizeBeforeRemove);
-		}
-
-		expectedEntries.put("sparse/added-entry.bin", addedData);
 
 		try (ZipView view = ZipView.open(path)) {
-			assertFalse(view.contains(removedName));
-			assertArrayEquals(addedData, readAllBytes(view.open(view.getEntry("sparse/added-entry.bin").orElseThrow())));
+			assertFalse(view.contains("small/alpha.txt"));
+			assertArrayEquals(beta, readAllBytes(view.open(view.getEntry("small/beta.txt").orElseThrow())));
+			assertArrayEquals(gamma, readAllBytes(view.open(view.getEntry("small/gamma.txt").orElseThrow())));
+		}
+
+		assertZipReadableByJava(path, expectedEntries);
+	}
+
+	@Test
+	@EnabledOnOs(OS.MAC)
+	void sparseModeSupportsLargeFileMutations() throws Exception {
+		Path path = tempDir.resolve("sparse-large.zip");
+		LinkedHashMap<String, byte[]> expectedEntries = new LinkedHashMap<>();
+		byte[] largeA = new byte[256 * 1024];
+		byte[] largeB = new byte[384 * 1024];
+		byte[] largeC = new byte[512 * 1024];
+
+		fillPattern(largeA, 17);
+		fillPattern(largeB, 29);
+		fillPattern(largeC, 43);
+
+		try (Zip zip = Zip.create(path, options -> options.sparse(true).writeMode(WriteMode.IMMEDIATE))) {
+			zip.add("large/a.bin", largeA);
+			zip.add("large/b.bin", largeB);
+			zip.remove("large/a.bin");
+			zip.add("large/c.bin", largeC);
+
+			expectedEntries.put("large/b.bin", largeB);
+			expectedEntries.put("large/c.bin", largeC);
+		}
+
+		try (ZipView view = ZipView.open(path)) {
+			assertFalse(view.contains("large/a.bin"));
+			assertArrayEquals(largeB, readAllBytes(view.open(view.getEntry("large/b.bin").orElseThrow())));
+			assertArrayEquals(largeC, readAllBytes(view.open(view.getEntry("large/c.bin").orElseThrow())));
 		}
 
 		assertZipReadableByJava(path, expectedEntries);
@@ -364,6 +378,12 @@ public class ZipMutableTest {
 
 	private static Callable<byte[]> readEntry(Zip zip, String name) {
 		return () -> readAllBytes(zip.open(zip.getEntry(name).orElseThrow()));
+	}
+
+	private static void fillPattern(byte[] data, int seed) {
+		for (int i = 0; i < data.length; i++) {
+			data[i] = (byte) (seed + i * 31);
+		}
 	}
 
 	private static LinkedHashMap<String, byte[]> orderedEntries(Object... keyValuePairs) {

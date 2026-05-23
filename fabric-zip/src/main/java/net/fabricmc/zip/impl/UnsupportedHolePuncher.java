@@ -23,6 +23,11 @@ enum UnsupportedHolePuncher implements HolePuncher {
 	INSTANCE;
 
 	@Override
+	public long minimumHoleLength() {
+		return Long.MAX_VALUE;
+	}
+
+	@Override
 	public void punch(Path path, long offset, long length) throws IOException {
 		throw new IOException("Sparse hole punching is not supported on this operating system");
 	}

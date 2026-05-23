@@ -499,18 +499,22 @@ public final class ZipImpl implements Zip {
 		channel.truncate(position);
 		channel.force(true);
 
-		if (previousMetadataLength > 0) {
+		if (shouldPunch(previousMetadataLength)) {
 			holePuncher.punch(path, previousMetadataOffset, previousMetadataLength);
 		}
 
 		for (java.util.Map.Entry<String, MutableZipEntry> entry : previousEntries.entrySet()) {
-			if (!updatedEntries.containsKey(entry.getKey()) && entry.getValue().localRecordLength > 0) {
+			if (!updatedEntries.containsKey(entry.getKey()) && shouldPunch(entry.getValue().localRecordLength)) {
 				holePuncher.punch(path, entry.getValue().localHeaderOffset, entry.getValue().localRecordLength);
 			}
 		}
 
 		trailingMetadataOffset = centralDirectoryOffset;
 		trailingMetadataLength = position - centralDirectoryOffset;
+	}
+
+	private boolean shouldPunch(long length) {
+		return length >= holePuncher.minimumHoleLength();
 	}
 
 	private long writeCentralDirectory(FileChannel channel, List<MutableZipEntry> entries, long position) throws IOException {
