@@ -376,6 +376,59 @@ public class ZipMutableTest {
 		assertZipReadableByJava(path, expectedEntries);
 	}
 
+	@Test
+	@EnabledOnOs(OS.MAC)
+	void sparseModeReusesFreedSpaceForReplacementEntry() throws Exception {
+		Path path = tempDir.resolve("sparse-reuse.zip");
+		byte[] original = new byte[512 * 1024];
+		byte[] replacement = new byte[160 * 1024];
+		fillPattern(original, 73);
+		fillPattern(replacement, 91);
+
+		long sizeAfterRemove;
+		long sizeAfterReplacement;
+
+		try (Zip zip = Zip.create(path, options -> options.sparse(true).writeMode(WriteMode.IMMEDIATE))) {
+			zip.add("payload.bin", original);
+			zip.remove("payload.bin");
+			sizeAfterRemove = Files.size(path);
+			zip.add("replacement.bin", replacement);
+			sizeAfterReplacement = Files.size(path);
+		}
+
+		assertTrue(sizeAfterReplacement - sizeAfterRemove < 8192, "Replacement entry should reuse freed sparse space");
+		assertZipReadableByJava(path, Map.of("replacement.bin", replacement));
+	}
+
+	@Test
+	@EnabledOnOs(OS.MAC)
+	void sparseModeRebuildsAndCoalescesFreeSpaceAfterReopen() throws Exception {
+		Path path = tempDir.resolve("sparse-coalesce.zip");
+		byte[] first = new byte[192 * 1024];
+		byte[] second = new byte[192 * 1024];
+		byte[] merged = new byte[320 * 1024];
+		fillPattern(first, 7);
+		fillPattern(second, 11);
+		fillPattern(merged, 13);
+
+		try (Zip zip = Zip.create(path, options -> options.sparse(true).writeMode(WriteMode.IMMEDIATE))) {
+			zip.add("first.bin", first);
+			zip.add("second.bin", second);
+			zip.remove("first.bin");
+			zip.remove("second.bin");
+		}
+
+		long sizeAfterReopenRemove = Files.size(path);
+
+		try (Zip zip = Zip.open(path, options -> options.sparse(true).writeMode(WriteMode.IMMEDIATE))) {
+			zip.add("merged.bin", merged);
+		}
+
+		long sizeAfterMerged = Files.size(path);
+		assertTrue(sizeAfterMerged - sizeAfterReopenRemove < 8192, "Merged entry should fit within coalesced sparse free space");
+		assertZipReadableByJava(path, Map.of("merged.bin", merged));
+	}
+
 	private static Callable<byte[]> readEntry(Zip zip, String name) {
 		return () -> readAllBytes(zip.open(zip.getEntry(name).orElseThrow()));
 	}
