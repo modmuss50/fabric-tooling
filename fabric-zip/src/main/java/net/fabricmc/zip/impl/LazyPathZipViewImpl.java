@@ -57,7 +57,7 @@ public final class LazyPathZipViewImpl implements ZipView {
 		this.entryIndexes = entryIndexes;
 		this.nameIndex = nameIndex;
 		this.entryCache = new ZipEntryViewImpl[entryIndexes.length];
-		this.entryLocks = new Object[entryIndexes.length];
+		this.entryLocks = new Object[16];
 		Arrays.setAll(entryLocks, ignored -> new Object());
 	}
 
@@ -171,18 +171,18 @@ public final class LazyPathZipViewImpl implements ZipView {
 	}
 
 	private ZipEntryViewImpl indexedEntry(String name) {
-		EntryIndex entryIndex = nameIndex.find(name);
+		int index = nameIndex.find(name);
 
-		if (entryIndex == null) {
+		if (index < 0) {
 			return scanEntry(name);
 		}
 
-		return entryAt(entryIndex.arrayIndex(), name);
+		return entryAt(index, name);
 	}
 
 	private ZipEntryViewImpl scanEntry(String name) {
-		for (EntryIndex entryIndex : entryIndexes) {
-			ZipEntryViewImpl entry = entryAt(entryIndex.arrayIndex(), null);
+		for (int index = 0; index < entryIndexes.length; index++) {
+			ZipEntryViewImpl entry = entryAt(index, null);
 
 			if (entry.getName().equals(name)) {
 				return entry;
@@ -196,8 +196,8 @@ public final class LazyPathZipViewImpl implements ZipView {
 		List<net.fabricmc.zip.api.ZipEntryView> materializedEntries = new ArrayList<>(entryIndexes.length);
 		Map<String, net.fabricmc.zip.api.ZipEntryView> materializedEntriesByName = new LinkedHashMap<>();
 
-		for (EntryIndex entryIndex : entryIndexes) {
-			ZipEntryViewImpl entry = entryAt(entryIndex.arrayIndex(), null);
+		for (int index = 0; index < entryIndexes.length; index++) {
+			ZipEntryViewImpl entry = entryAt(index, null);
 			materializedEntries.add(entry);
 			materializedEntriesByName.putIfAbsent(entry.getName(), entry);
 		}
@@ -213,8 +213,8 @@ public final class LazyPathZipViewImpl implements ZipView {
 		int offset = 0;
 
 		for (int index = 0; index < entryCount; index++) {
-			entryIndexes[index] = readEntryIndex(centralDirectory, offset, index);
-			offset = entryIndexes[index].nextOffset();
+			entryIndexes[index] = readEntryIndex(centralDirectory, offset);
+			offset = entryIndexes[index].endOffset();
 		}
 
 		if (offset != centralDirectory.length) {
@@ -224,7 +224,7 @@ public final class LazyPathZipViewImpl implements ZipView {
 		return entryIndexes;
 	}
 
-	private static EntryIndex readEntryIndex(byte[] centralDirectory, int offset, int arrayIndex) throws IOException {
+	private static EntryIndex readEntryIndex(byte[] centralDirectory, int offset) throws IOException {
 		if (offset + ZipConstants.CENTRAL_DIRECTORY_HEADER_LENGTH > centralDirectory.length) {
 			throw new MalformedZipException("Truncated central directory entry");
 		}
@@ -263,9 +263,7 @@ public final class LazyPathZipViewImpl implements ZipView {
 		}
 
 		return new EntryIndex(
-				arrayIndex,
 				offset,
-				nextOffset,
 				flags,
 				methodCode,
 				crc32,
@@ -278,7 +276,8 @@ public final class LazyPathZipViewImpl implements ZipView {
 				variableOffset,
 				asciiNameHash(centralDirectory, variableOffset, nameLength),
 				lastModifiedDate,
-				lastModifiedTime
+				lastModifiedTime,
+				nextOffset
 		);
 	}
 
@@ -289,7 +288,7 @@ public final class LazyPathZipViewImpl implements ZipView {
 			return entry;
 		}
 
-		synchronized (entryLocks[index]) {
+		synchronized (entryLocks[index & (entryLocks.length - 1)]) {
 			entry = entryCache[index];
 
 			if (entry == null) {
@@ -458,16 +457,16 @@ public final class LazyPathZipViewImpl implements ZipView {
 			return new NameIndex(centralDirectory, entryIndexes, asciiTable);
 		}
 
-		EntryIndex find(String name) {
+		int find(String name) {
 			if (asciiTable.length == 0) {
-				return null;
+				return EMPTY;
 			}
 
 			int hash = name.hashCode();
 
 			for (int index = 0; index < name.length(); index++) {
 				if (name.charAt(index) > 0x7F) {
-					return null;
+					return EMPTY;
 				}
 			}
 
@@ -478,13 +477,13 @@ public final class LazyPathZipViewImpl implements ZipView {
 				int entryArrayIndex = asciiTable[slot];
 
 				if (entryArrayIndex == EMPTY) {
-					return null;
+					return EMPTY;
 				}
 
 				EntryIndex entryIndex = entryIndexes[entryArrayIndex];
 
 				if (nameEquals(entryIndex, name, hash)) {
-					return entryIndex;
+					return entryArrayIndex;
 				}
 
 				slot = (slot + 1) & mask;
@@ -562,9 +561,7 @@ public final class LazyPathZipViewImpl implements ZipView {
 	}
 
 	private record EntryIndex(
-			int arrayIndex,
 			int centralDirectoryOffset,
-			int nextOffset,
 			int flags,
 			int methodCode,
 			long crc32,
@@ -577,7 +574,8 @@ public final class LazyPathZipViewImpl implements ZipView {
 			int variableOffset,
 			int asciiNameHash,
 			int lastModifiedDate,
-			int lastModifiedTimeBits
+			int lastModifiedTimeBits,
+			int endOffset
 	) {
 	}
 }
