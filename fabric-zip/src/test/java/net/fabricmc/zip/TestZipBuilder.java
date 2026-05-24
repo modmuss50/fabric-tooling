@@ -18,6 +18,7 @@ package net.fabricmc.zip;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -27,7 +28,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.zip.CRC32;
-import java.util.zip.Deflater;
+
+import net.fabricmc.zip.api.CompressionCodec;
+import net.fabricmc.zip.api.CompressionMethod;
 
 final class TestZipBuilder {
 	private static final Charset CP437 = Charset.forName("IBM437");
@@ -232,19 +235,10 @@ final class TestZipBuilder {
 	}
 
 	private static byte[] deflate(byte[] data) throws IOException {
-		Deflater deflater = new Deflater(Deflater.DEFAULT_COMPRESSION, true);
-		deflater.setInput(data);
-		deflater.finish();
-		byte[] buffer = new byte[256];
 		ByteArrayOutputStream output = new ByteArrayOutputStream();
 
-		try {
-			while (!deflater.finished()) {
-				int written = deflater.deflate(buffer);
-				output.write(buffer, 0, written);
-			}
-		} finally {
-			deflater.end();
+		try (OutputStream compressedOutput = CompressionCodec.javaDefault().compress(CompressionMethod.DEFLATED, output)) {
+			compressedOutput.write(data);
 		}
 
 		return output.toByteArray();

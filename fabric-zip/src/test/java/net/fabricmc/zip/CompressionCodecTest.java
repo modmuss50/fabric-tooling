@@ -19,8 +19,10 @@ package net.fabricmc.zip;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.file.attribute.FileTime;
 
 import org.junit.jupiter.api.Test;
@@ -49,6 +51,19 @@ public class CompressionCodecTest {
 				InputStream inflated = CompressionCodec.javaDefault().decompress(view.getEntry("hello.txt").orElseThrow(), raw)) {
 			assertArrayEquals(expected, readAllBytes(inflated));
 		}
+	}
+
+	@Test
+	void deflatedDataRoundTripsThroughCodec() throws IOException {
+		byte[] expected = "hello codec".getBytes();
+		ByteArrayOutputStream compressed = new ByteArrayOutputStream();
+
+		try (OutputStream compressedOutput = CompressionCodec.javaDefault().compress(CompressionMethod.DEFLATED, compressed)) {
+			compressedOutput.write(expected);
+		}
+
+		byte[] inflated = readAllBytes(CompressionCodec.javaDefault().decompress(new TestEntry("hello.txt", CompressionMethod.DEFLATED), new ByteArrayInputStream(compressed.toByteArray())));
+		assertArrayEquals(expected, inflated);
 	}
 
 	private static byte[] readAllBytes(InputStream stream) throws IOException {

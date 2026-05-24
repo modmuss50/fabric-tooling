@@ -18,13 +18,14 @@ package net.fabricmc.zip.api;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 
 import org.jetbrains.annotations.ApiStatus;
 
 import net.fabricmc.zip.impl.JavaCompressionCodec;
 
 /**
- * Inflates ZIP entry payloads.
+ * Compresses and inflates ZIP entry payloads.
  */
 @ApiStatus.NonExtendable
 public interface CompressionCodec {
@@ -36,6 +37,16 @@ public interface CompressionCodec {
 	static CompressionCodec javaDefault() {
 		return JavaCompressionCodec.INSTANCE;
 	}
+
+	/**
+	 * Wraps an output stream so entry data written to it is encoded with the supplied method.
+	 *
+	 * @param method the compression method to apply.
+	 * @param compressedData the target stream for the encoded payload.
+	 * @return a stream that accepts uncompressed entry data.
+	 * @throws IOException if compression setup fails.
+	 */
+	OutputStream compress(CompressionMethod method, OutputStream compressedData) throws IOException;
 
 	/**
 	 * Wraps the raw compressed payload for the supplied entry.

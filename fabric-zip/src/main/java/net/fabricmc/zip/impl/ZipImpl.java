@@ -43,8 +43,6 @@ import java.util.Optional;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
 import java.util.zip.CRC32;
-import java.util.zip.Deflater;
-import java.util.zip.DeflaterOutputStream;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -954,15 +952,14 @@ public final class ZipImpl implements Zip {
 		return new PayloadWithMetadata(new Payload(tempFile), crc32.getValue(), size, size);
 	}
 
-	private static PayloadWithMetadata copyDeflatedPayload(InputStream inputStream) throws IOException {
+	private PayloadWithMetadata copyDeflatedPayload(InputStream inputStream) throws IOException {
 		Path tempFile = Files.createTempFile("fabric-zip-entry-", ".bin");
 		CRC32 crc32 = new CRC32();
 		long uncompressedSize = 0L;
-		Deflater deflater = new Deflater(Deflater.DEFAULT_COMPRESSION, true);
 
 		try (inputStream;
 				OutputStream fileOutput = Files.newOutputStream(tempFile);
-				DeflaterOutputStream deflaterOutputStream = new DeflaterOutputStream(fileOutput, deflater, 8192, true)) {
+				OutputStream compressedOutput = compressionCodec.compress(CompressionMethod.DEFLATED, fileOutput)) {
 			byte[] buffer = new byte[8192];
 
 			while (true) {
@@ -972,17 +969,13 @@ public final class ZipImpl implements Zip {
 					break;
 				}
 
-				deflaterOutputStream.write(buffer, 0, read);
+				compressedOutput.write(buffer, 0, read);
 				crc32.update(buffer, 0, read);
 				uncompressedSize += read;
 			}
-
-			deflaterOutputStream.finish();
 		} catch (IOException | RuntimeException error) {
 			Files.deleteIfExists(tempFile);
 			throw error;
-		} finally {
-			deflater.end();
 		}
 
 		long compressedSize = Files.size(tempFile);

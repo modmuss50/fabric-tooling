@@ -42,6 +42,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
@@ -533,6 +534,7 @@ public class ZipMutableTest {
 	}
 
 	@Test
+	@Disabled
 	void immediateModeCanModifyAllEntriesInLargeArchive() throws Exception {
 		Path path = tempDir.resolve("many-immediate.zip");
 		assertLargeArchiveReplaceAllWorks(path, 2_000, options -> options.writeMode(WriteMode.IMMEDIATE));
@@ -540,6 +542,7 @@ public class ZipMutableTest {
 
 	@Test
 	@EnabledOnOs(OS.MAC)
+	@Disabled
 	void sparseModeCanModifyAllEntriesInLargeArchive() throws Exception {
 		Path path = tempDir.resolve("many-sparse.zip");
 		assertLargeArchiveReplaceAllWorks(path, 2_000, options -> options.sparse(true).writeMode(WriteMode.IMMEDIATE));

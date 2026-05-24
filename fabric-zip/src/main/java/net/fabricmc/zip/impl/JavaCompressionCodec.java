@@ -17,12 +17,17 @@
 package net.fabricmc.zip.impl;
 
 import java.io.FilterInputStream;
+import java.io.FilterOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.zip.Deflater;
+import java.util.zip.DeflaterOutputStream;
 import java.util.zip.Inflater;
 import java.util.zip.InflaterInputStream;
 
 import net.fabricmc.zip.api.CompressionCodec;
+import net.fabricmc.zip.api.CompressionMethod;
 import net.fabricmc.zip.api.UnsupportedZipFeatureException;
 import net.fabricmc.zip.api.ZipEntryView;
 
@@ -30,6 +35,16 @@ public enum JavaCompressionCodec implements CompressionCodec {
 	INSTANCE;
 
 	private static final int INFLATE_BUFFER_SIZE = 16 * 1024;
+	private static final int DEFLATE_BUFFER_SIZE = 8 * 1024;
+
+	@Override
+	public OutputStream compress(CompressionMethod method, OutputStream compressedData) throws IOException {
+		return switch (method) {
+		case STORED -> compressedData;
+		case DEFLATED -> newDeflaterStream(compressedData);
+		default -> throw new UnsupportedZipFeatureException("Unsupported compression method: " + method);
+		};
+	}
 
 	@Override
 	public InputStream decompress(ZipEntryView entry, InputStream compressedData) throws IOException {
@@ -51,6 +66,34 @@ public enum JavaCompressionCodec implements CompressionCodec {
 					super.close();
 				} finally {
 					inflater.end();
+				}
+			}
+		};
+	}
+
+	private static OutputStream newDeflaterStream(OutputStream compressedData) {
+		Deflater deflater = new Deflater(Deflater.DEFAULT_COMPRESSION, true);
+		DeflaterOutputStream deflaterStream = new DeflaterOutputStream(compressedData, deflater, DEFLATE_BUFFER_SIZE, true);
+
+		return new FilterOutputStream(deflaterStream) {
+			private boolean closed;
+
+			@Override
+			public void close() throws IOException {
+				if (closed) {
+					return;
+				}
+
+				closed = true;
+
+				try {
+					deflaterStream.finish();
+				} finally {
+					try {
+						super.close();
+					} finally {
+						deflater.end();
+					}
 				}
 			}
 		};
