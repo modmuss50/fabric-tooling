@@ -29,6 +29,8 @@ import net.fabricmc.zip.impl.JavaCompressionCodec;
 @ApiStatus.NonExtendable
 public interface CompressionCodec {
 	/**
+	 * Returns the default codec backed by the JDK compression classes.
+	 *
 	 * @return the default codec backed by the JDK compression classes.
 	 */
 	static CompressionCodec javaDefault() {

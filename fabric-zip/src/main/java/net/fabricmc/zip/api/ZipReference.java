@@ -69,6 +69,8 @@ public final class ZipReference<T extends ZipView> implements AutoCloseable {
 	}
 
 	/**
+	 * Returns the shared ZIP view referenced by this handle.
+	 *
 	 * @return the shared ZIP view referenced by this handle.
 	 */
 	public T get() {
@@ -76,6 +78,11 @@ public final class ZipReference<T extends ZipView> implements AutoCloseable {
 		return sharedValue.value;
 	}
 
+	/**
+	 * Releases this reference and closes the shared ZIP view when the last reference is closed.
+	 *
+	 * @throws IOException if closing the shared ZIP view fails.
+	 */
 	@Override
 	public void close() throws IOException {
 		if (!closed.compareAndSet(false, true)) {

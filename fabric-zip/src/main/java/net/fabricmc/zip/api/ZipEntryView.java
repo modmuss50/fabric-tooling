@@ -26,33 +26,98 @@ import org.jetbrains.annotations.Nullable;
  */
 @ApiStatus.NonExtendable
 public interface ZipEntryView {
+	/**
+	 * Returns the entry name.
+	 *
+	 * @return the entry name.
+	 */
 	String getName();
 
+	/**
+	 * Returns the optional entry comment.
+	 *
+	 * @return the optional entry comment, or {@code null} if absent.
+	 */
 	@Nullable
 	String getComment();
 
+	/**
+	 * Returns the entry compression method.
+	 *
+	 * @return the entry compression method.
+	 */
 	CompressionMethod getMethod();
 
+	/**
+	 * Returns the raw ZIP general-purpose bit flags.
+	 *
+	 * @return the raw ZIP general-purpose bit flags.
+	 */
 	int getFlags();
 
+	/**
+	 * Returns the entry CRC-32 value.
+	 *
+	 * @return the entry CRC-32 value.
+	 */
 	long getCrc32();
 
+	/**
+	 * Returns the compressed entry size in bytes.
+	 *
+	 * @return the compressed entry size in bytes.
+	 */
 	long getCompressedSize();
 
+	/**
+	 * Returns the uncompressed entry size in bytes.
+	 *
+	 * @return the uncompressed entry size in bytes.
+	 */
 	long getUncompressedSize();
 
+	/**
+	 * Returns the absolute local file header offset in the archive.
+	 *
+	 * @return the absolute local file header offset in the archive.
+	 */
 	long getLocalHeaderOffset();
 
+	/**
+	 * Returns the absolute central directory record offset in the archive.
+	 *
+	 * @return the absolute central directory record offset in the archive.
+	 */
 	long getCentralDirectoryOffset();
 
+	/**
+	 * Returns whether this entry represents a directory.
+	 *
+	 * @return whether this entry represents a directory.
+	 */
 	boolean isDirectory();
 
+	/**
+	 * Returns the optional last modified time.
+	 *
+	 * @return the optional last modified time, or {@code null} if unavailable.
+	 */
 	@Nullable
 	FileTime getLastModifiedTime();
 
+	/**
+	 * Returns the optional last access time.
+	 *
+	 * @return the optional last access time, or {@code null} if unavailable.
+	 */
 	@Nullable
 	FileTime getLastAccessTime();
 
+	/**
+	 * Returns the optional creation time.
+	 *
+	 * @return the optional creation time, or {@code null} if unavailable.
+	 */
 	@Nullable
 	FileTime getCreationTime();
 }

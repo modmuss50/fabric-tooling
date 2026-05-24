@@ -20,7 +20,13 @@ package net.fabricmc.zip.api;
  * ZIP compression methods supported by this library.
  */
 public enum CompressionMethod {
+	/**
+	 * Stores entry data without compression.
+	 */
 	STORED(0),
+	/**
+	 * Stores entry data using the DEFLATE algorithm.
+	 */
 	DEFLATED(8);
 
 	private final int code;
@@ -30,6 +36,8 @@ public enum CompressionMethod {
 	}
 
 	/**
+	 * Returns the ZIP specification numeric code for this compression method.
+	 *
 	 * @return the ZIP specification numeric code for this compression method.
 	 */
 	public int getCode() {

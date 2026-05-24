@@ -39,54 +39,118 @@ public final class ZipOptions {
 		this.defaultCompressionMethod = builder.defaultCompressionMethod;
 	}
 
+	/**
+	 * Returns whether reproducible ZIP output is enabled.
+	 *
+	 * @return whether reproducible ZIP output is enabled.
+	 */
 	public boolean reproducible() {
 		return reproducible;
 	}
 
+	/**
+	 * Returns whether sparse mode is enabled.
+	 *
+	 * @return whether sparse mode is enabled.
+	 */
 	public boolean sparse() {
 		return sparse;
 	}
 
+	/**
+	 * Returns when successful mutations are written to disk.
+	 *
+	 * @return when successful mutations are written to disk.
+	 */
 	public WriteMode writeMode() {
 		return writeMode;
 	}
 
+	/**
+	 * Returns the default compression method used for new entries.
+	 *
+	 * @return the default compression method used for new entries.
+	 */
 	public CompressionMethod defaultCompressionMethod() {
 		return defaultCompressionMethod;
 	}
 
+	/**
+	 * Builds ZIP options from the supplied builder callback.
+	 *
+	 * @param consumer configures the builder.
+	 * @return the configured options.
+	 */
 	public static ZipOptions configure(Consumer<Builder> consumer) {
 		Builder builder = new Builder();
 		Objects.requireNonNull(consumer, "consumer").accept(builder);
 		return builder.build();
 	}
 
+	/**
+	 * A builder for {@link ZipOptions}.
+	 */
 	public static final class Builder {
 		private boolean reproducible;
 		private boolean sparse;
 		private WriteMode writeMode = WriteMode.ON_CLOSE;
 		private CompressionMethod defaultCompressionMethod = CompressionMethod.DEFLATED;
 
+		/**
+		 * Creates a builder with default ZIP options.
+		 */
+		public Builder() {
+		}
+
+		/**
+		 * Enables or disables reproducible ZIP output.
+		 *
+		 * @param reproducible whether reproducible output is enabled.
+		 * @return this builder.
+		 */
 		public Builder reproducible(boolean reproducible) {
 			this.reproducible = reproducible;
 			return this;
 		}
 
+		/**
+		 * Enables or disables sparse mode.
+		 *
+		 * @param sparse whether sparse mode is enabled.
+		 * @return this builder.
+		 */
 		public Builder sparse(boolean sparse) {
 			this.sparse = sparse;
 			return this;
 		}
 
+		/**
+		 * Sets when successful mutations are written to disk.
+		 *
+		 * @param writeMode the write mode to use.
+		 * @return this builder.
+		 */
 		public Builder writeMode(WriteMode writeMode) {
 			this.writeMode = Objects.requireNonNull(writeMode, "writeMode");
 			return this;
 		}
 
+		/**
+		 * Sets the default compression method used for newly added entries.
+		 *
+		 * @param defaultCompressionMethod the default compression method.
+		 * @return this builder.
+		 */
 		public Builder defaultCompressionMethod(CompressionMethod defaultCompressionMethod) {
 			this.defaultCompressionMethod = Objects.requireNonNull(defaultCompressionMethod, "defaultCompressionMethod");
 			return this;
 		}
 
+		/**
+		 * Validates and creates the configured ZIP options.
+		 *
+		 * @return the configured ZIP options.
+		 */
 		public ZipOptions build() {
 			if (reproducible && sparse) {
 				throw new IllegalArgumentException("Reproducible ZIPs are not compatible with sparse mode");

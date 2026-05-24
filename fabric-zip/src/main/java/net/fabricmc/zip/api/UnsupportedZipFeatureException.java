@@ -20,6 +20,11 @@ package net.fabricmc.zip.api;
  * Thrown when a ZIP uses a feature that is intentionally unsupported.
  */
 public final class UnsupportedZipFeatureException extends ZipException {
+	/**
+	 * Creates an unsupported ZIP feature exception with the supplied message.
+	 *
+	 * @param message the failure description.
+	 */
 	public UnsupportedZipFeatureException(String message) {
 		super(message);
 	}

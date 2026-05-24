@@ -20,6 +20,12 @@ package net.fabricmc.zip.api;
  * Controls when ZIP mutations are written to disk.
  */
 public enum WriteMode {
+	/**
+	 * Defers writing changes until the ZIP is closed.
+	 */
 	ON_CLOSE,
+	/**
+	 * Writes changes to disk after each successful mutation.
+	 */
 	IMMEDIATE
 }

@@ -43,6 +43,8 @@ public interface ZipByteSource extends Closeable {
 	}
 
 	/**
+	 * Returns the total size of the byte source in bytes.
+	 *
 	 * @return the total size of the byte source in bytes.
 	 * @throws IOException if the size cannot be determined.
 	 */

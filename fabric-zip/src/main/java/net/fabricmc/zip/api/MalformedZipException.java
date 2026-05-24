@@ -20,6 +20,11 @@ package net.fabricmc.zip.api;
  * Thrown when ZIP records are invalid or truncated.
  */
 public final class MalformedZipException extends ZipException {
+	/**
+	 * Creates a malformed ZIP exception with the supplied message.
+	 *
+	 * @param message the failure description.
+	 */
 	public MalformedZipException(String message) {
 		super(message);
 	}

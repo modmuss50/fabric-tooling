@@ -22,10 +22,21 @@ import java.io.IOException;
  * Base exception for ZIP parsing and access failures.
  */
 public class ZipException extends IOException {
+	/**
+	 * Creates a ZIP exception with the supplied message.
+	 *
+	 * @param message the failure description.
+	 */
 	public ZipException(String message) {
 		super(message);
 	}
 
+	/**
+	 * Creates a ZIP exception with the supplied message and cause.
+	 *
+	 * @param message the failure description.
+	 * @param cause the underlying cause.
+	 */
 	public ZipException(String message, Throwable cause) {
 		super(message, cause);
 	}
