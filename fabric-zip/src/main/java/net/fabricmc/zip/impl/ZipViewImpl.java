@@ -18,6 +18,7 @@ package net.fabricmc.zip.impl;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -25,7 +26,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Collectors;
 
 import net.fabricmc.zip.api.CompressionCodec;
 import net.fabricmc.zip.api.ZipByteSource;
@@ -42,7 +42,13 @@ public final class ZipViewImpl implements ZipView {
 	private ZipViewImpl(ZipByteSource source, CompressionCodec compressionCodec, List<ZipParser.EntryData> parsedEntries) {
 		this.source = source;
 		this.compressionCodec = compressionCodec;
-		this.entries = Collections.unmodifiableList(parsedEntries.stream().map(this::createEntry).collect(Collectors.toList()));
+		List<ZipEntryView> entries = new ArrayList<>(parsedEntries.size());
+
+		for (ZipParser.EntryData parsedEntry : parsedEntries) {
+			entries.add(createEntry(parsedEntry));
+		}
+
+		this.entries = Collections.unmodifiableList(entries);
 		this.entriesByName = buildEntriesByName(entries);
 	}
 

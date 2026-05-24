@@ -16,41 +16,10 @@
 
 package net.fabricmc.zip.impl;
 
-import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.Objects;
 
-import net.fabricmc.zip.api.ZipByteSource;
-
-final class FileChannelZipByteSource implements ZipByteSource {
-	private final FileChannel channel;
-
+final class FileChannelZipByteSource extends ChannelZipByteSource {
 	FileChannelZipByteSource(FileChannel channel) {
-		this.channel = Objects.requireNonNull(channel, "channel");
-	}
-
-	@Override
-	public long size() throws IOException {
-		return channel.size();
-	}
-
-	@Override
-	public int read(long position, byte[] buffer, int offset, int length) throws IOException {
-		Objects.checkFromIndexSize(offset, length, buffer.length);
-
-		if (length == 0) {
-			return 0;
-		}
-
-		if (position < 0) {
-			throw new IllegalArgumentException("ZIP positions must be non-negative");
-		}
-
-		return channel.read(ByteBuffer.wrap(buffer, offset, length), position);
-	}
-
-	@Override
-	public void close() {
+		super(channel, false);
 	}
 }

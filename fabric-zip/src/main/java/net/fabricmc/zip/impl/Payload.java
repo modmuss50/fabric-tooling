@@ -25,14 +25,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-final class Payload implements Closeable {
-	private final Path path;
-	private final AtomicBoolean closed = new AtomicBoolean();
+import net.fabricmc.zip.api.ZipByteSource;
 
-	Payload(Path path) {
-		this.path = path;
-	}
-
+interface Payload extends Closeable {
 	static Payload copyOf(InputStream inputStream) throws IOException {
 		Path tempFile = Files.createTempFile("fabric-zip-entry-", ".bin");
 
@@ -43,10 +38,26 @@ final class Payload implements Closeable {
 			throw error;
 		}
 
-		return new Payload(tempFile);
+		return new TempFilePayload(tempFile);
 	}
 
-	InputStream openStream() throws IOException {
+	static Payload slice(ZipByteSource source, long offset, long length) {
+		return new SlicePayload(source, offset, length);
+	}
+
+	InputStream openStream() throws IOException;
+}
+
+final class TempFilePayload implements Payload {
+	private final Path path;
+	private final AtomicBoolean closed = new AtomicBoolean();
+
+	TempFilePayload(Path path) {
+		this.path = path;
+	}
+
+	@Override
+	public InputStream openStream() throws IOException {
 		if (closed.get()) {
 			throw new IllegalStateException("ZIP entry payload is closed");
 		}
@@ -67,5 +78,26 @@ final class Payload implements Closeable {
 		}
 
 		Files.deleteIfExists(path);
+	}
+}
+
+final class SlicePayload implements Payload {
+	private final ZipByteSource source;
+	private final long offset;
+	private final long length;
+
+	SlicePayload(ZipByteSource source, long offset, long length) {
+		this.source = source;
+		this.offset = offset;
+		this.length = length;
+	}
+
+	@Override
+	public InputStream openStream() {
+		return new BoundedInputStream(source, offset, length);
+	}
+
+	@Override
+	public void close() {
 	}
 }

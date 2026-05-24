@@ -17,43 +17,12 @@
 package net.fabricmc.zip.impl;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.Objects;
 
-import net.fabricmc.zip.api.ZipByteSource;
-
-public final class PathZipByteSource implements ZipByteSource {
-	private final FileChannel channel;
-
+public final class PathZipByteSource extends ChannelZipByteSource {
 	public PathZipByteSource(Path path) throws IOException {
-		this.channel = FileChannel.open(path, StandardOpenOption.READ);
-	}
-
-	@Override
-	public long size() throws IOException {
-		return channel.size();
-	}
-
-	@Override
-	public int read(long position, byte[] buffer, int offset, int length) throws IOException {
-		Objects.checkFromIndexSize(offset, length, buffer.length);
-
-		if (length == 0) {
-			return 0;
-		}
-
-		if (position < 0) {
-			throw new IllegalArgumentException("ZIP positions must be non-negative");
-		}
-
-		return channel.read(ByteBuffer.wrap(buffer, offset, length), position);
-	}
-
-	@Override
-	public void close() throws IOException {
-		channel.close();
+		super(FileChannel.open(path, StandardOpenOption.READ), true);
 	}
 }

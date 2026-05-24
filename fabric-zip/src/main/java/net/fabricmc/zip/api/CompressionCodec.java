@@ -24,6 +24,7 @@ import org.jetbrains.annotations.ApiStatus;
 
 import net.fabricmc.zip.impl.JavaCompressionCodec;
 import net.fabricmc.zip.impl.LibDeflateCompressionCodec;
+import net.fabricmc.zip.impl.PreferredCompressionCodec;
 
 /**
  * Compresses and inflates ZIP entry payloads.
@@ -45,7 +46,7 @@ public interface CompressionCodec {
 	 * @return the preferred default codec for the current runtime.
 	 */
 	static CompressionCodec defaultCodec() {
-		return LibDeflateCompressionCodec.INSTANCE.isAvailable() ? LibDeflateCompressionCodec.INSTANCE : javaDefault();
+		return LibDeflateCompressionCodec.INSTANCE.isAvailable() ? PreferredCompressionCodec.INSTANCE : javaDefault();
 	}
 
 	/**

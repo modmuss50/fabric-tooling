@@ -27,6 +27,7 @@ import java.nio.channels.FileLock;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.FileTime;
 import java.time.Instant;
@@ -71,8 +72,6 @@ public final class ZipImpl implements Zip {
 
 	private volatile MutableZipSnapshot snapshot;
 	private LinkedHashMap<String, MutableZipEntry> entriesByName;
-	private long trailingMetadataOffset;
-	private long trailingMetadataLength;
 	private boolean dirty;
 
 	private ZipImpl(
@@ -81,8 +80,6 @@ public final class ZipImpl implements Zip {
 			FileLock fileLock,
 			ZipOptions options,
 			LinkedHashMap<String, MutableZipEntry> entriesByName,
-			long trailingMetadataOffset,
-			long trailingMetadataLength,
 			boolean dirty
 	) {
 		this.path = path;
@@ -90,8 +87,6 @@ public final class ZipImpl implements Zip {
 		this.fileLock = fileLock;
 		this.options = options;
 		this.entriesByName = entriesByName;
-		this.trailingMetadataOffset = trailingMetadataOffset;
-		this.trailingMetadataLength = trailingMetadataLength;
 		this.dirty = dirty;
 		this.compressionCodec = options.compressionCodec();
 		this.snapshot = MutableZipSnapshot.create(this, entriesByName.values());
@@ -107,7 +102,7 @@ public final class ZipImpl implements Zip {
 
 		try {
 			fileLock = tryLock(channel, normalizedPath);
-			ZipImpl zip = new ZipImpl(normalizedPath, channel, fileLock, options, new LinkedHashMap<>(), 0L, 0L, true);
+			ZipImpl zip = new ZipImpl(normalizedPath, channel, fileLock, options, new LinkedHashMap<>(), true);
 			success = true;
 			return zip;
 		} finally {
@@ -132,15 +127,13 @@ public final class ZipImpl implements Zip {
 
 		try {
 			fileLock = tryLock(channel, normalizedPath);
-			LoadedArchive loadedArchive = loadExistingArchive(normalizedPath, channel);
+			LoadedArchive loadedArchive = loadExistingArchive(channel);
 			ZipImpl zip = new ZipImpl(
 					normalizedPath,
 					channel,
 					fileLock,
 					options,
 					loadedArchive.entriesByName(),
-					loadedArchive.trailingMetadataOffset(),
-					loadedArchive.trailingMetadataLength(),
 					false
 			);
 			success = true;
@@ -371,11 +364,13 @@ public final class ZipImpl implements Zip {
 			return;
 		}
 
+		Path replacementArchive = null;
+
 		lock.writeLock().lock();
 
 		try {
 			if (dirty) {
-				persistFull(entriesByName);
+				replacementArchive = persistFull(entriesByName);
 				dirty = false;
 			}
 		} finally {
@@ -383,6 +378,12 @@ public final class ZipImpl implements Zip {
 		}
 
 		IOException exception = null;
+		exception = closeSuppressing(exception, fileLock);
+		exception = closeSuppressing(exception, channel);
+
+		if (replacementArchive != null) {
+			exception = replaceArchive(exception, replacementArchive);
+		}
 
 		for (MutableZipEntry entry : entriesByName.values()) {
 			exception = closeSuppressing(exception, entry.payload);
@@ -392,32 +393,17 @@ public final class ZipImpl implements Zip {
 			exception = closeSuppressing(exception, payload);
 		}
 
-		exception = closeSuppressing(exception, fileLock);
-		exception = closeSuppressing(exception, channel);
-
 		if (exception != null) {
 			throw exception;
 		}
 	}
 
 	private void commitUpdatedEntries(LinkedHashMap<String, MutableZipEntry> updatedEntries, List<Payload> retired) {
-		LinkedHashMap<String, MutableZipEntry> previousEntries = entriesByName;
-		long previousTrailingMetadataOffset = trailingMetadataOffset;
-		long previousTrailingMetadataLength = trailingMetadataLength;
-		boolean previousDirty = dirty;
-
-		try {
-			dirty = true;
-			entriesByName = updatedEntries;
-			retiredPayloads.addAll(retired);
-			snapshot = MutableZipSnapshot.create(this, updatedEntries.values());
-		} catch (RuntimeException error) {
-			entriesByName = previousEntries;
-			trailingMetadataOffset = previousTrailingMetadataOffset;
-			trailingMetadataLength = previousTrailingMetadataLength;
-			dirty = previousDirty;
-			throw error;
-		}
+		MutableZipSnapshot updatedSnapshot = MutableZipSnapshot.create(this, updatedEntries.values());
+		dirty = true;
+		entriesByName = updatedEntries;
+		retiredPayloads.addAll(retired);
+		snapshot = updatedSnapshot;
 	}
 
 	private MutableZipEntry requireEntry(ZipEntryView entry) {
@@ -513,17 +499,32 @@ public final class ZipImpl implements Zip {
 		}
 	}
 
-	private void persistFull(LinkedHashMap<String, MutableZipEntry> entries) throws IOException {
+	private Path persistFull(LinkedHashMap<String, MutableZipEntry> entries) throws IOException {
+		Path temporaryArchive = createReplacementArchivePath();
+		boolean success = false;
+
+		try (FileChannel outputChannel = FileChannel.open(temporaryArchive, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
+			persistFull(outputChannel, entries);
+			success = true;
+			return temporaryArchive;
+		} finally {
+			if (!success) {
+				Files.deleteIfExists(temporaryArchive);
+			}
+		}
+	}
+
+	private void persistFull(FileChannel outputChannel, LinkedHashMap<String, MutableZipEntry> entries) throws IOException {
 		List<MutableZipEntry> orderedEntries = orderedEntries(entries.values());
 		long position = 0L;
 
 		for (MutableZipEntry entry : orderedEntries) {
 			long localHeaderOffset = position;
 			LocalHeaderData localHeaderData = buildLocalHeader(entry, localHeaderOffset);
-			position = writeBytes(channel, position, localHeaderData.header());
+			position = writeBytes(outputChannel, position, localHeaderData.header());
 
 			try (InputStream inputStream = entry.payload.openStream()) {
-				position = transferToChannel(inputStream, channel, position);
+				position = transferToChannel(inputStream, outputChannel, position);
 			}
 
 			entry.localHeaderOffset = localHeaderOffset;
@@ -531,11 +532,9 @@ public final class ZipImpl implements Zip {
 		}
 
 		long centralDirectoryOffset = position;
-		position = writeCentralDirectory(channel, orderedEntries, position);
-		channel.truncate(position);
-		channel.force(true);
-		trailingMetadataOffset = centralDirectoryOffset;
-		trailingMetadataLength = position - centralDirectoryOffset;
+		position = writeCentralDirectory(outputChannel, orderedEntries, position);
+		outputChannel.truncate(position);
+		outputChannel.force(true);
 	}
 
 	private long writeCentralDirectory(FileChannel channel, List<MutableZipEntry> entries, long position) throws IOException {
@@ -764,7 +763,7 @@ public final class ZipImpl implements Zip {
 			throw error;
 		}
 
-		return new PayloadWithMetadata(new Payload(tempFile), crc32.getValue(), size, size);
+		return new PayloadWithMetadata(new TempFilePayload(tempFile), crc32.getValue(), size, size);
 	}
 
 	private PayloadWithMetadata copyDeflatedPayload(InputStream inputStream) throws IOException {
@@ -794,10 +793,10 @@ public final class ZipImpl implements Zip {
 		}
 
 		long compressedSize = Files.size(tempFile);
-		return new PayloadWithMetadata(new Payload(tempFile), crc32.getValue(), compressedSize, uncompressedSize);
+		return new PayloadWithMetadata(new TempFilePayload(tempFile), crc32.getValue(), compressedSize, uncompressedSize);
 	}
 
-	private static LoadedArchive loadExistingArchive(Path path, FileChannel channel) throws IOException {
+	private static LoadedArchive loadExistingArchive(FileChannel channel) throws IOException {
 		FileChannelZipByteSource source = new FileChannelZipByteSource(channel);
 		ZipParser.ParsedZip parsedZip = ZipParser.parseArchive(source);
 		LinkedHashMap<String, MutableZipEntry> entriesByName = new LinkedHashMap<>();
@@ -808,7 +807,7 @@ public final class ZipImpl implements Zip {
 			}
 
 			EntryLocation location = locateEntry(source, parsedEntry);
-			Payload payload = copyPayload(source, location.dataOffset(), parsedEntry.compressedSize());
+			Payload payload = Payload.slice(source, location.dataOffset(), parsedEntry.compressedSize());
 			MutableZipEntry entry = new MutableZipEntry(
 					parsedEntry.name(),
 					parsedEntry.comment(),
@@ -828,7 +827,7 @@ public final class ZipImpl implements Zip {
 			entriesByName.put(entry.name, entry);
 		}
 
-		return new LoadedArchive(entriesByName, parsedZip.centralDirectoryOffset(), parsedZip.trailingMetadataLength());
+		return new LoadedArchive(entriesByName);
 	}
 
 	private static FileTime normalizeLoadedTimestamp(@Nullable FileTime timestamp) {
@@ -837,34 +836,6 @@ public final class ZipImpl implements Zip {
 
 	private static FileTime normalizeLoadedTimestamp(@Nullable FileTime timestamp, @Nullable FileTime fallback) {
 		return timestamp != null ? timestamp : normalizeLoadedTimestamp(fallback);
-	}
-
-	private static Payload copyPayload(FileChannelZipByteSource source, long offset, long length) throws IOException {
-		Path tempFile = Files.createTempFile("fabric-zip-entry-", ".bin");
-
-		try (OutputStream outputStream = Files.newOutputStream(tempFile)) {
-			byte[] buffer = new byte[8192];
-			long position = offset;
-			long remaining = length;
-
-			while (remaining > 0) {
-				int toRead = (int) Math.min(buffer.length, remaining);
-				int read = source.read(position, buffer, 0, toRead);
-
-				if (read < 0) {
-					throw new MalformedZipException("Unexpected end of ZIP entry payload");
-				}
-
-				outputStream.write(buffer, 0, read);
-				position += read;
-				remaining -= read;
-			}
-		} catch (IOException | RuntimeException error) {
-			Files.deleteIfExists(tempFile);
-			throw error;
-		}
-
-		return new Payload(tempFile);
 	}
 
 	private static EntryLocation locateEntry(FileChannelZipByteSource source, ZipParser.EntryData entry) throws IOException {
@@ -916,6 +887,37 @@ public final class ZipImpl implements Zip {
 
 	private static Path normalizePath(Path path) {
 		return Objects.requireNonNull(path, "path").toAbsolutePath().normalize();
+	}
+
+	private Path createReplacementArchivePath() throws IOException {
+		String prefix = path.getFileName() != null ? path.getFileName().toString() + "-" : "fabric-zip-";
+		return Files.createTempFile(path.getParent(), prefix, ".tmp");
+	}
+
+	private IOException replaceArchive(@Nullable IOException existing, Path replacementArchive) {
+		try {
+			try {
+				Files.move(replacementArchive, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+			} catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
+				Files.move(replacementArchive, path, StandardCopyOption.REPLACE_EXISTING);
+			}
+
+			return existing;
+		} catch (IOException moveException) {
+			IOException result = existing == null ? moveException : existing;
+
+			if (existing != null) {
+				existing.addSuppressed(moveException);
+			}
+
+			try {
+				Files.deleteIfExists(replacementArchive);
+			} catch (IOException deleteException) {
+				result.addSuppressed(deleteException);
+			}
+
+			return result;
+		}
 	}
 
 	private static void closeResources(FileChannel channel, @Nullable FileLock fileLock) throws IOException {
@@ -996,6 +998,6 @@ public final class ZipImpl implements Zip {
 	private record EntryLocation(long dataOffset, long recordLength) {
 	}
 
-	private record LoadedArchive(LinkedHashMap<String, MutableZipEntry> entriesByName, long trailingMetadataOffset, long trailingMetadataLength) {
+	private record LoadedArchive(LinkedHashMap<String, MutableZipEntry> entriesByName) {
 	}
 }
