@@ -32,6 +32,7 @@ import java.util.concurrent.Future;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import net.fabricmc.zip.api.Zip;
 import net.fabricmc.zip.api.ZipReference;
 import net.fabricmc.zip.api.ZipView;
 
@@ -89,6 +90,32 @@ public class ZipReferenceTest {
 
 			assertArrayEquals("alpha".getBytes(), firstFuture.get());
 			assertArrayEquals("beta".getBytes(), secondFuture.get());
+		}
+	}
+
+	@Test
+	void repeatedOpenOfSamePathSharesUnderlyingZip() throws Exception {
+		Path path = writeZip("same-zip.zip", builder -> builder.addStored("value.txt", "same".getBytes()));
+
+		try (ZipReference<Zip> first = ZipReference.open(path);
+				ZipReference<Zip> second = ZipReference.open(path)) {
+			assertTrue(first.get() == second.get());
+		}
+	}
+
+	@Test
+	void createdZipReferenceSharesMutableZipAndPersistsChanges() throws Exception {
+		Path path = tempDir.resolve("created.zip");
+
+		try (ZipReference<Zip> first = ZipReference.create(path);
+				ZipReference<Zip> second = ZipReference.open(path)) {
+			assertTrue(first.get() == second.get());
+			first.get().add("created.txt", "created".getBytes());
+			assertEquals("created", new String(readAllBytes(second.get().open(second.get().getEntry("created.txt").orElseThrow()))));
+		}
+
+		try (ZipView view = ZipView.open(path)) {
+			assertEquals("created", new String(readAllBytes(view.open(view.getEntry("created.txt").orElseThrow()))));
 		}
 	}
 

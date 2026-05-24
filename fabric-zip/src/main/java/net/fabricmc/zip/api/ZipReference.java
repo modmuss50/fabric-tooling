@@ -31,13 +31,19 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class ZipReference<T extends ZipView> implements AutoCloseable {
 	private static final Object OPEN_VIEWS_LOCK = new Object();
 	private static final Map<Path, SharedValue<ZipView>> OPEN_VIEWS = new HashMap<>();
+	private static final Object OPEN_ZIPS_LOCK = new Object();
+	private static final Map<Path, SharedValue<Zip>> OPEN_ZIPS = new HashMap<>();
 
 	private final Path path;
+	private final Object lock;
+	private final Map<Path, SharedValue<T>> openValues;
 	private final SharedValue<T> sharedValue;
 	private final AtomicBoolean closed = new AtomicBoolean();
 
-	private ZipReference(Path path, SharedValue<T> sharedValue) {
+	private ZipReference(Path path, Object lock, Map<Path, SharedValue<T>> openValues, SharedValue<T> sharedValue) {
 		this.path = path;
+		this.lock = lock;
+		this.openValues = openValues;
 		this.sharedValue = sharedValue;
 	}
 
@@ -51,21 +57,33 @@ public final class ZipReference<T extends ZipView> implements AutoCloseable {
 	 * @throws IOException if the archive cannot be opened.
 	 */
 	public static ZipReference<ZipView> openView(Path path) throws IOException {
-		Path normalizedPath = normalizePath(path);
+		return openShared(path, OPEN_VIEWS_LOCK, OPEN_VIEWS, ZipView::open);
+	}
 
-		synchronized (OPEN_VIEWS_LOCK) {
-			SharedValue<ZipView> sharedView = OPEN_VIEWS.get(normalizedPath);
+	/**
+	 * Opens a shared mutable ZIP for the supplied path.
+	 * Repeated calls for the same normalized absolute path reuse the same underlying ZIP until
+	 * the last reference is closed.
+	 *
+	 * @param path the archive path.
+	 * @return a reference-counted mutable ZIP.
+	 * @throws IOException if the archive cannot be opened.
+	 */
+	public static ZipReference<Zip> open(Path path) throws IOException {
+		return openShared(path, OPEN_ZIPS_LOCK, OPEN_ZIPS, Zip::open);
+	}
 
-			if (sharedView != null) {
-				sharedView.retain();
-				return new ZipReference<>(normalizedPath, sharedView);
-			}
-
-			ZipView view = ZipView.open(normalizedPath);
-			SharedValue<ZipView> newSharedView = new SharedValue<>(view);
-			OPEN_VIEWS.put(normalizedPath, newSharedView);
-			return new ZipReference<>(normalizedPath, newSharedView);
-		}
+	/**
+	 * Creates a shared mutable ZIP for the supplied path.
+	 * Repeated calls for the same normalized absolute path reuse the same underlying ZIP until
+	 * the last reference is closed.
+	 *
+	 * @param path the archive path.
+	 * @return a reference-counted mutable ZIP.
+	 * @throws IOException if the archive cannot be created.
+	 */
+	public static ZipReference<Zip> create(Path path) throws IOException {
+		return openShared(path, OPEN_ZIPS_LOCK, OPEN_ZIPS, Zip::create);
 	}
 
 	/**
@@ -91,11 +109,11 @@ public final class ZipReference<T extends ZipView> implements AutoCloseable {
 
 		T valueToClose = null;
 
-		synchronized (OPEN_VIEWS_LOCK) {
+		synchronized (lock) {
 			int remaining = sharedValue.release();
 
 			if (remaining == 0) {
-				OPEN_VIEWS.remove(path, sharedValue);
+				openValues.remove(path, sharedValue);
 				valueToClose = sharedValue.value;
 			}
 		}
@@ -113,6 +131,24 @@ public final class ZipReference<T extends ZipView> implements AutoCloseable {
 
 	private static Path normalizePath(Path path) {
 		return Objects.requireNonNull(path, "path").toAbsolutePath().normalize();
+	}
+
+	private static <T extends ZipView> ZipReference<T> openShared(Path path, Object lock, Map<Path, SharedValue<T>> openValues, ZipOpener<T> opener) throws IOException {
+		Path normalizedPath = normalizePath(path);
+
+		synchronized (lock) {
+			SharedValue<T> sharedValue = openValues.get(normalizedPath);
+
+			if (sharedValue != null) {
+				sharedValue.retain();
+				return new ZipReference<>(normalizedPath, lock, openValues, sharedValue);
+			}
+
+			T value = opener.open(normalizedPath);
+			SharedValue<T> newSharedValue = new SharedValue<>(value);
+			openValues.put(normalizedPath, newSharedValue);
+			return new ZipReference<>(normalizedPath, lock, openValues, newSharedValue);
+		}
 	}
 
 	private static class SharedValue<T extends ZipView> {
@@ -141,5 +177,10 @@ public final class ZipReference<T extends ZipView> implements AutoCloseable {
 
 			return referenceCount;
 		}
+	}
+
+	@FunctionalInterface
+	private interface ZipOpener<T extends ZipView> {
+		T open(Path path) throws IOException;
 	}
 }
