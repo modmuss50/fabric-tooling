@@ -43,7 +43,7 @@ class ChannelZipByteSource implements ZipByteSource {
 
 	@Override
 	public int read(long position, byte[] buffer, int offset, int length) throws IOException {
-		Objects.checkFromIndexSize(offset, length, buffer.length);
+		ZipByteSource.checkRange(buffer, offset, length);
 
 		if (length == 0) {
 			return 0;

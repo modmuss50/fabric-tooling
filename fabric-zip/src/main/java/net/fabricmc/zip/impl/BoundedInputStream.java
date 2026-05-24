@@ -18,7 +18,6 @@ package net.fabricmc.zip.impl;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.Objects;
 
 import net.fabricmc.zip.api.ZipByteSource;
 
@@ -42,7 +41,7 @@ final class BoundedInputStream extends InputStream {
 
 	@Override
 	public int read(byte[] buffer, int offset, int length) throws IOException {
-		Objects.checkFromIndexSize(offset, length, buffer.length);
+		ZipByteSource.checkRange(buffer, offset, length);
 
 		if (length == 0) {
 			return 0;

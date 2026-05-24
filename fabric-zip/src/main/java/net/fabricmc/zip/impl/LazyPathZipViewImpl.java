@@ -163,7 +163,13 @@ public final class LazyPathZipViewImpl implements ZipView {
 		ensureOpen();
 		Objects.requireNonNull(entry, "entry");
 
-		if (!(entry instanceof ZipEntryViewImpl zipEntry) || zipEntry.archive() != this) {
+		if (!(entry instanceof ZipEntryViewImpl)) {
+			throw new IllegalArgumentException("Entry does not belong to this archive view");
+		}
+
+		ZipEntryViewImpl zipEntry = (ZipEntryViewImpl) entry;
+
+		if (zipEntry.archive() != this) {
 			throw new IllegalArgumentException("Entry does not belong to this archive view");
 		}
 
@@ -418,15 +424,52 @@ public final class LazyPathZipViewImpl implements ZipView {
 		}
 	}
 
-	private record MaterializedEntries(List<net.fabricmc.zip.api.ZipEntryView> entries, Map<String, net.fabricmc.zip.api.ZipEntryView> entriesByName) {
+	private static final class MaterializedEntries {
+		private final List<net.fabricmc.zip.api.ZipEntryView> entries;
+		private final Map<String, net.fabricmc.zip.api.ZipEntryView> entriesByName;
+
+		private MaterializedEntries(List<net.fabricmc.zip.api.ZipEntryView> entries, Map<String, net.fabricmc.zip.api.ZipEntryView> entriesByName) {
+			this.entries = entries;
+			this.entriesByName = entriesByName;
+		}
+
+		List<net.fabricmc.zip.api.ZipEntryView> entries() {
+			return entries;
+		}
+
+		Map<String, net.fabricmc.zip.api.ZipEntryView> entriesByName() {
+			return entriesByName;
+		}
 	}
 
-	private record ResolvedEntryData(
-			net.fabricmc.zip.api.CompressionMethod method,
-			long compressedSize,
-			long uncompressedSize,
-			long localHeaderOffset
-	) {
+	private static final class ResolvedEntryData {
+		private final net.fabricmc.zip.api.CompressionMethod method;
+		private final long compressedSize;
+		private final long uncompressedSize;
+		private final long localHeaderOffset;
+
+		private ResolvedEntryData(net.fabricmc.zip.api.CompressionMethod method, long compressedSize, long uncompressedSize, long localHeaderOffset) {
+			this.method = method;
+			this.compressedSize = compressedSize;
+			this.uncompressedSize = uncompressedSize;
+			this.localHeaderOffset = localHeaderOffset;
+		}
+
+		net.fabricmc.zip.api.CompressionMethod method() {
+			return method;
+		}
+
+		long compressedSize() {
+			return compressedSize;
+		}
+
+		long uncompressedSize() {
+			return uncompressedSize;
+		}
+
+		long localHeaderOffset() {
+			return localHeaderOffset;
+		}
 	}
 
 	private static final class NameIndex {
@@ -560,22 +603,115 @@ public final class LazyPathZipViewImpl implements ZipView {
 		}
 	}
 
-	private record EntryIndex(
-			int centralDirectoryOffset,
-			int flags,
-			int methodCode,
-			long crc32,
-			long compressedSize,
-			long uncompressedSize,
-			long localHeaderOffset,
-			int nameLength,
-			int extraLength,
-			int commentLength,
-			int variableOffset,
-			int asciiNameHash,
-			int lastModifiedDate,
-			int lastModifiedTimeBits,
-			int endOffset
-	) {
+	private static final class EntryIndex {
+		private final int centralDirectoryOffset;
+		private final int flags;
+		private final int methodCode;
+		private final long crc32;
+		private final long compressedSize;
+		private final long uncompressedSize;
+		private final long localHeaderOffset;
+		private final int nameLength;
+		private final int extraLength;
+		private final int commentLength;
+		private final int variableOffset;
+		private final int asciiNameHash;
+		private final int lastModifiedDate;
+		private final int lastModifiedTimeBits;
+		private final int endOffset;
+
+		private EntryIndex(
+				int centralDirectoryOffset,
+				int flags,
+				int methodCode,
+				long crc32,
+				long compressedSize,
+				long uncompressedSize,
+				long localHeaderOffset,
+				int nameLength,
+				int extraLength,
+				int commentLength,
+				int variableOffset,
+				int asciiNameHash,
+				int lastModifiedDate,
+				int lastModifiedTimeBits,
+				int endOffset
+		) {
+			this.centralDirectoryOffset = centralDirectoryOffset;
+			this.flags = flags;
+			this.methodCode = methodCode;
+			this.crc32 = crc32;
+			this.compressedSize = compressedSize;
+			this.uncompressedSize = uncompressedSize;
+			this.localHeaderOffset = localHeaderOffset;
+			this.nameLength = nameLength;
+			this.extraLength = extraLength;
+			this.commentLength = commentLength;
+			this.variableOffset = variableOffset;
+			this.asciiNameHash = asciiNameHash;
+			this.lastModifiedDate = lastModifiedDate;
+			this.lastModifiedTimeBits = lastModifiedTimeBits;
+			this.endOffset = endOffset;
+		}
+
+		int centralDirectoryOffset() {
+			return centralDirectoryOffset;
+		}
+
+		int flags() {
+			return flags;
+		}
+
+		int methodCode() {
+			return methodCode;
+		}
+
+		long crc32() {
+			return crc32;
+		}
+
+		long compressedSize() {
+			return compressedSize;
+		}
+
+		long uncompressedSize() {
+			return uncompressedSize;
+		}
+
+		long localHeaderOffset() {
+			return localHeaderOffset;
+		}
+
+		int nameLength() {
+			return nameLength;
+		}
+
+		int extraLength() {
+			return extraLength;
+		}
+
+		int commentLength() {
+			return commentLength;
+		}
+
+		int variableOffset() {
+			return variableOffset;
+		}
+
+		int asciiNameHash() {
+			return asciiNameHash;
+		}
+
+		int lastModifiedDate() {
+			return lastModifiedDate;
+		}
+
+		int lastModifiedTimeBits() {
+			return lastModifiedTimeBits;
+		}
+
+		int endOffset() {
+			return endOffset;
+		}
 	}
 }

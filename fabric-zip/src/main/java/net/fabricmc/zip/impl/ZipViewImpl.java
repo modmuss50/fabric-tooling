@@ -111,7 +111,13 @@ public final class ZipViewImpl implements ZipView {
 		ensureOpen();
 		Objects.requireNonNull(entry, "entry");
 
-		if (!(entry instanceof ZipEntryViewImpl zipEntry) || zipEntry.archive() != this) {
+		if (!(entry instanceof ZipEntryViewImpl)) {
+			throw new IllegalArgumentException("Entry does not belong to this archive view");
+		}
+
+		ZipEntryViewImpl zipEntry = (ZipEntryViewImpl) entry;
+
+		if (zipEntry.archive() != this) {
 			throw new IllegalArgumentException("Entry does not belong to this archive view");
 		}
 

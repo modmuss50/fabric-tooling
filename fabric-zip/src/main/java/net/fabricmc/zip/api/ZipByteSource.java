@@ -72,7 +72,7 @@ public interface ZipByteSource extends Closeable {
 	 * @throws IOException if the read fails or does not have enough data.
 	 */
 	default void readFully(long position, byte[] buffer, int offset, int length) throws IOException {
-		Objects.checkFromIndexSize(offset, length, buffer.length);
+		checkRange(buffer, offset, length);
 
 		long currentPosition = position;
 		int currentOffset = offset;
@@ -100,5 +100,13 @@ public interface ZipByteSource extends Closeable {
 	 */
 	default void readFully(long position, byte[] buffer) throws IOException {
 		readFully(position, buffer, 0, buffer.length);
+	}
+
+	static void checkRange(byte[] buffer, int offset, int length) {
+		Objects.requireNonNull(buffer, "buffer");
+
+		if (offset < 0 || length < 0 || offset > buffer.length - length) {
+			throw new IndexOutOfBoundsException("offset=" + offset + ", length=" + length + ", buffer.length=" + buffer.length);
+		}
 	}
 }

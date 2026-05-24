@@ -272,7 +272,7 @@ public final class ZipImpl implements Zip {
 			try {
 				LinkedHashMap<String, MutableZipEntry> updatedEntries = new LinkedHashMap<>(entriesByName);
 				updatedEntries.put(name, replacementEntry);
-				commitUpdatedEntries(updatedEntries, List.of(existingEntry.payload));
+				commitUpdatedEntries(updatedEntries, Collections.singletonList(existingEntry.payload));
 				success = true;
 			} finally {
 				if (!success) {
@@ -302,7 +302,7 @@ public final class ZipImpl implements Zip {
 			byte[] inputBytes;
 
 			try (InputStream inputStream = open(snapshot.entriesByName().get(name))) {
-				inputBytes = inputStream.readAllBytes();
+				inputBytes = readAllBytes(inputStream);
 			}
 
 			byte[] updatedBytes = Objects.requireNonNull(modifier.apply(inputBytes), "modifier result");
@@ -312,7 +312,7 @@ public final class ZipImpl implements Zip {
 			try {
 				LinkedHashMap<String, MutableZipEntry> updatedEntries = new LinkedHashMap<>(entriesByName);
 				updatedEntries.put(name, replacementEntry);
-				commitUpdatedEntries(updatedEntries, List.of(existingEntry.payload));
+				commitUpdatedEntries(updatedEntries, Collections.singletonList(existingEntry.payload));
 				success = true;
 			} finally {
 				if (!success) {
@@ -410,7 +410,13 @@ public final class ZipImpl implements Zip {
 		ensureOpen();
 		Objects.requireNonNull(entry, "entry");
 
-		if (!(entry instanceof MutableZipSnapshot.MutableZipSnapshotEntry snapshotEntry) || snapshotEntry.archive() != this) {
+		if (!(entry instanceof MutableZipSnapshot.MutableZipSnapshotEntry)) {
+			throw new IllegalArgumentException("Entry does not belong to this archive");
+		}
+
+		MutableZipSnapshot.MutableZipSnapshotEntry snapshotEntry = (MutableZipSnapshot.MutableZipSnapshotEntry) entry;
+
+		if (snapshotEntry.archive() != this) {
 			throw new IllegalArgumentException("Entry does not belong to this archive");
 		}
 
@@ -473,8 +479,8 @@ public final class ZipImpl implements Zip {
 	}
 
 	private MutableZipEntry stageCopiedEntry(String targetName, ZipEntryView sourceEntry, InputStream rawData) throws IOException {
-		try (rawData) {
-			Payload payload = Payload.copyOf(rawData);
+		try (InputStream source = rawData) {
+			Payload payload = Payload.copyOf(source);
 			FileTime modifiedTime = normalizedTimestamp(sourceEntry.getLastModifiedTime());
 			FileTime accessTime = normalizedTimestamp(sourceEntry.getLastAccessTime());
 			FileTime creationTime = normalizedTimestamp(sourceEntry.getCreationTime());
@@ -648,9 +654,9 @@ public final class ZipImpl implements Zip {
 		writeShort(output, 0);
 		writeInt(output, entry.directory ? 0x10 : 0);
 		writeInt(output, zip64 ? UINT32_MAX : entry.localHeaderOffset);
-		output.writeBytes(nameBytes);
-		output.writeBytes(extra);
-		output.writeBytes(commentBytes);
+		output.write(nameBytes, 0, nameBytes.length);
+		output.write(extra, 0, extra.length);
+		output.write(commentBytes, 0, commentBytes.length);
 		return output.toByteArray();
 	}
 
@@ -675,8 +681,8 @@ public final class ZipImpl implements Zip {
 		writeInt(output, zip64 ? UINT32_MAX : entry.uncompressedSize);
 		writeShort(output, nameBytes.length);
 		writeShort(output, extra.length);
-		output.writeBytes(nameBytes);
-		output.writeBytes(extra);
+		output.write(nameBytes, 0, nameBytes.length);
+		output.write(extra, 0, extra.length);
 		return new LocalHeaderData(output.toByteArray());
 	}
 
@@ -709,7 +715,8 @@ public final class ZipImpl implements Zip {
 		ByteArrayOutputStream output = new ByteArrayOutputStream();
 		writeShort(output, ZipConstants.ZIP64_EXTRA_FIELD_ID);
 		writeShort(output, data.size());
-		output.writeBytes(data.toByteArray());
+		byte[] dataBytes = data.toByteArray();
+		output.write(dataBytes, 0, dataBytes.length);
 		return output.toByteArray();
 	}
 
@@ -744,11 +751,11 @@ public final class ZipImpl implements Zip {
 		CRC32 crc32 = new CRC32();
 		long size = 0L;
 
-		try (inputStream; OutputStream outputStream = Files.newOutputStream(tempFile)) {
+		try (InputStream source = inputStream; OutputStream outputStream = Files.newOutputStream(tempFile)) {
 			byte[] buffer = new byte[8192];
 
 			while (true) {
-				int read = inputStream.read(buffer);
+				int read = source.read(buffer);
 
 				if (read < 0) {
 					break;
@@ -771,13 +778,13 @@ public final class ZipImpl implements Zip {
 		CRC32 crc32 = new CRC32();
 		long uncompressedSize = 0L;
 
-		try (inputStream;
+		try (InputStream source = inputStream;
 				OutputStream fileOutput = Files.newOutputStream(tempFile);
 				OutputStream compressedOutput = compressionCodec.compress(CompressionMethod.DEFLATED, fileOutput)) {
 			byte[] buffer = new byte[8192];
 
 			while (true) {
-				int read = inputStream.read(buffer);
+				int read = source.read(buffer);
 
 				if (read < 0) {
 					break;
@@ -939,7 +946,7 @@ public final class ZipImpl implements Zip {
 			closeable.close();
 			return existing;
 		} catch (Exception exception) {
-			IOException ioException = exception instanceof IOException io ? io : new IOException(exception);
+			IOException ioException = exception instanceof IOException ? (IOException) exception : new IOException(exception);
 
 			if (existing == null) {
 				return ioException;
@@ -989,15 +996,90 @@ public final class ZipImpl implements Zip {
 		output.write((int) ((value >>> 56) & 0xFF));
 	}
 
-	private record LocalHeaderData(byte[] header) {
+	private static byte[] readAllBytes(InputStream inputStream) throws IOException {
+		ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+		byte[] buffer = new byte[8192];
+
+		while (true) {
+			int read = inputStream.read(buffer);
+
+			if (read < 0) {
+				return outputStream.toByteArray();
+			}
+
+			outputStream.write(buffer, 0, read);
+		}
 	}
 
-	private record PayloadWithMetadata(Payload payload, long crc32, long size, long uncompressedSize) {
+	private static final class LocalHeaderData {
+		private final byte[] header;
+
+		private LocalHeaderData(byte[] header) {
+			this.header = header;
+		}
+
+		byte[] header() {
+			return header;
+		}
 	}
 
-	private record EntryLocation(long dataOffset, long recordLength) {
+	private static final class PayloadWithMetadata {
+		private final Payload payload;
+		private final long crc32;
+		private final long size;
+		private final long uncompressedSize;
+
+		private PayloadWithMetadata(Payload payload, long crc32, long size, long uncompressedSize) {
+			this.payload = payload;
+			this.crc32 = crc32;
+			this.size = size;
+			this.uncompressedSize = uncompressedSize;
+		}
+
+		Payload payload() {
+			return payload;
+		}
+
+		long crc32() {
+			return crc32;
+		}
+
+		long size() {
+			return size;
+		}
+
+		long uncompressedSize() {
+			return uncompressedSize;
+		}
 	}
 
-	private record LoadedArchive(LinkedHashMap<String, MutableZipEntry> entriesByName) {
+	private static final class EntryLocation {
+		private final long dataOffset;
+		private final long recordLength;
+
+		private EntryLocation(long dataOffset, long recordLength) {
+			this.dataOffset = dataOffset;
+			this.recordLength = recordLength;
+		}
+
+		long dataOffset() {
+			return dataOffset;
+		}
+
+		long recordLength() {
+			return recordLength;
+		}
+	}
+
+	private static final class LoadedArchive {
+		private final LinkedHashMap<String, MutableZipEntry> entriesByName;
+
+		private LoadedArchive(LinkedHashMap<String, MutableZipEntry> entriesByName) {
+			this.entriesByName = entriesByName;
+		}
+
+		LinkedHashMap<String, MutableZipEntry> entriesByName() {
+			return entriesByName;
+		}
 	}
 }

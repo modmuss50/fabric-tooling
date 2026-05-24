@@ -29,10 +29,18 @@ import org.jetbrains.annotations.Nullable;
 import net.fabricmc.zip.api.CompressionMethod;
 import net.fabricmc.zip.api.ZipEntryView;
 
-record MutableZipSnapshot(List<ZipEntryView> entries, Map<String, ZipEntryView> entriesByName) {
+final class MutableZipSnapshot {
+	private final List<ZipEntryView> entries;
+	private final Map<String, ZipEntryView> entriesByName;
+
+	private MutableZipSnapshot(List<ZipEntryView> entries, Map<String, ZipEntryView> entriesByName) {
+		this.entries = entries;
+		this.entriesByName = entriesByName;
+	}
+
 	static MutableZipSnapshot create(ZipImpl archive, Collection<MutableZipEntry> entryStates) {
-		List<ZipEntryView> entries = new ArrayList<>(entryStates.size());
-		Map<String, ZipEntryView> entriesByName = new LinkedHashMap<>();
+		List<ZipEntryView> entries = new ArrayList<ZipEntryView>(entryStates.size());
+		Map<String, ZipEntryView> entriesByName = new LinkedHashMap<String, ZipEntryView>();
 
 		for (MutableZipEntry entryState : entryStates) {
 			MutableZipSnapshotEntry entryView = new MutableZipSnapshotEntry(archive, entryState);
@@ -43,7 +51,31 @@ record MutableZipSnapshot(List<ZipEntryView> entries, Map<String, ZipEntryView> 
 		return new MutableZipSnapshot(Collections.unmodifiableList(entries), Collections.unmodifiableMap(entriesByName));
 	}
 
-	record MutableZipSnapshotEntry(ZipImpl archive, MutableZipEntry state) implements ZipEntryView {
+	List<ZipEntryView> entries() {
+		return entries;
+	}
+
+	Map<String, ZipEntryView> entriesByName() {
+		return entriesByName;
+	}
+
+	static final class MutableZipSnapshotEntry implements ZipEntryView {
+		private final ZipImpl archive;
+		private final MutableZipEntry state;
+
+		MutableZipSnapshotEntry(ZipImpl archive, MutableZipEntry state) {
+			this.archive = archive;
+			this.state = state;
+		}
+
+		ZipImpl archive() {
+			return archive;
+		}
+
+		MutableZipEntry state() {
+			return state;
+		}
+
 		@Override
 		public String getName() {
 			return state.name;

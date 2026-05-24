@@ -196,11 +196,38 @@ public final class ZipEntryViewImpl implements ZipEntryView {
 		LazyMetadata load();
 	}
 
-	record LazyMetadata(
-			@Nullable String comment,
-			@Nullable FileTime lastModifiedTime,
-			@Nullable FileTime lastAccessTime,
-			@Nullable FileTime creationTime
-	) {
+	static final class LazyMetadata {
+		private final @Nullable String comment;
+		private final @Nullable FileTime lastModifiedTime;
+		private final @Nullable FileTime lastAccessTime;
+		private final @Nullable FileTime creationTime;
+
+		LazyMetadata(
+				@Nullable String comment,
+				@Nullable FileTime lastModifiedTime,
+				@Nullable FileTime lastAccessTime,
+				@Nullable FileTime creationTime
+		) {
+			this.comment = comment;
+			this.lastModifiedTime = lastModifiedTime;
+			this.lastAccessTime = lastAccessTime;
+			this.creationTime = creationTime;
+		}
+
+		@Nullable String comment() {
+			return comment;
+		}
+
+		@Nullable FileTime lastModifiedTime() {
+			return lastModifiedTime;
+		}
+
+		@Nullable FileTime lastAccessTime() {
+			return lastAccessTime;
+		}
+
+		@Nullable FileTime creationTime() {
+			return creationTime;
+		}
 	}
 }

@@ -407,38 +407,227 @@ final class ZipParser {
 		return slice;
 	}
 
-	private record EndOfCentralDirectory(long offset, int diskNumber, int centralDirectoryDiskNumber, long entryCount, long centralDirectorySize, long centralDirectoryOffset) {
+	private static final class EndOfCentralDirectory {
+		private final long offset;
+		private final int diskNumber;
+		private final int centralDirectoryDiskNumber;
+		private final long entryCount;
+		private final long centralDirectorySize;
+		private final long centralDirectoryOffset;
+
+		private EndOfCentralDirectory(long offset, int diskNumber, int centralDirectoryDiskNumber, long entryCount, long centralDirectorySize, long centralDirectoryOffset) {
+			this.offset = offset;
+			this.diskNumber = diskNumber;
+			this.centralDirectoryDiskNumber = centralDirectoryDiskNumber;
+			this.entryCount = entryCount;
+			this.centralDirectorySize = centralDirectorySize;
+			this.centralDirectoryOffset = centralDirectoryOffset;
+		}
 	}
 
-	private record CentralDirectory(long entryCount, long size, long offset) {
+	private static final class CentralDirectory {
+		private final long entryCount;
+		private final long size;
+		private final long offset;
+
+		private CentralDirectory(long entryCount, long size, long offset) {
+			this.entryCount = entryCount;
+			this.size = size;
+			this.offset = offset;
+		}
 	}
 
-	record Zip64Values(long uncompressedSize, long compressedSize, long localHeaderOffset) {
+	static final class Zip64Values {
+		private final long uncompressedSize;
+		private final long compressedSize;
+		private final long localHeaderOffset;
+
+		Zip64Values(long uncompressedSize, long compressedSize, long localHeaderOffset) {
+			this.uncompressedSize = uncompressedSize;
+			this.compressedSize = compressedSize;
+			this.localHeaderOffset = localHeaderOffset;
+		}
+
+		long uncompressedSize() {
+			return uncompressedSize;
+		}
+
+		long compressedSize() {
+			return compressedSize;
+		}
+
+		long localHeaderOffset() {
+			return localHeaderOffset;
+		}
 	}
 
-	record Timestamps(@Nullable FileTime lastModifiedTime, @Nullable FileTime lastAccessTime, @Nullable FileTime creationTime) {
+	static final class Timestamps {
+		private final @Nullable FileTime lastModifiedTime;
+		private final @Nullable FileTime lastAccessTime;
+		private final @Nullable FileTime creationTime;
+
+		Timestamps(@Nullable FileTime lastModifiedTime, @Nullable FileTime lastAccessTime, @Nullable FileTime creationTime) {
+			this.lastModifiedTime = lastModifiedTime;
+			this.lastAccessTime = lastAccessTime;
+			this.creationTime = creationTime;
+		}
+
+		@Nullable FileTime lastModifiedTime() {
+			return lastModifiedTime;
+		}
+
+		@Nullable FileTime lastAccessTime() {
+			return lastAccessTime;
+		}
+
+		@Nullable FileTime creationTime() {
+			return creationTime;
+		}
 	}
 
-	record EntryData(
-			String name,
-			@Nullable String comment,
-			CompressionMethod method,
-			int flags,
-			long crc32,
-			long compressedSize,
-			long uncompressedSize,
-			long localHeaderOffset,
-			long centralDirectoryOffset,
-			boolean directory,
-			@Nullable FileTime lastModifiedTime,
-			@Nullable FileTime lastAccessTime,
-			@Nullable FileTime creationTime
-	) {
+	static final class EntryData {
+		private final String name;
+		private final @Nullable String comment;
+		private final CompressionMethod method;
+		private final int flags;
+		private final long crc32;
+		private final long compressedSize;
+		private final long uncompressedSize;
+		private final long localHeaderOffset;
+		private final long centralDirectoryOffset;
+		private final boolean directory;
+		private final @Nullable FileTime lastModifiedTime;
+		private final @Nullable FileTime lastAccessTime;
+		private final @Nullable FileTime creationTime;
+
+		EntryData(
+				String name,
+				@Nullable String comment,
+				CompressionMethod method,
+				int flags,
+				long crc32,
+				long compressedSize,
+				long uncompressedSize,
+				long localHeaderOffset,
+				long centralDirectoryOffset,
+				boolean directory,
+				@Nullable FileTime lastModifiedTime,
+				@Nullable FileTime lastAccessTime,
+				@Nullable FileTime creationTime
+		) {
+			this.name = name;
+			this.comment = comment;
+			this.method = method;
+			this.flags = flags;
+			this.crc32 = crc32;
+			this.compressedSize = compressedSize;
+			this.uncompressedSize = uncompressedSize;
+			this.localHeaderOffset = localHeaderOffset;
+			this.centralDirectoryOffset = centralDirectoryOffset;
+			this.directory = directory;
+			this.lastModifiedTime = lastModifiedTime;
+			this.lastAccessTime = lastAccessTime;
+			this.creationTime = creationTime;
+		}
+
+		String name() {
+			return name;
+		}
+
+		@Nullable String comment() {
+			return comment;
+		}
+
+		CompressionMethod method() {
+			return method;
+		}
+
+		int flags() {
+			return flags;
+		}
+
+		long crc32() {
+			return crc32;
+		}
+
+		long compressedSize() {
+			return compressedSize;
+		}
+
+		long uncompressedSize() {
+			return uncompressedSize;
+		}
+
+		long localHeaderOffset() {
+			return localHeaderOffset;
+		}
+
+		long centralDirectoryOffset() {
+			return centralDirectoryOffset;
+		}
+
+		boolean directory() {
+			return directory;
+		}
+
+		@Nullable FileTime lastModifiedTime() {
+			return lastModifiedTime;
+		}
+
+		@Nullable FileTime lastAccessTime() {
+			return lastAccessTime;
+		}
+
+		@Nullable FileTime creationTime() {
+			return creationTime;
+		}
 	}
 
-	record ParsedZip(List<EntryData> entries, long centralDirectoryOffset, long trailingMetadataLength) {
+	static final class ParsedZip {
+		private final List<EntryData> entries;
+		private final long centralDirectoryOffset;
+		private final long trailingMetadataLength;
+
+		ParsedZip(List<EntryData> entries, long centralDirectoryOffset, long trailingMetadataLength) {
+			this.entries = entries;
+			this.centralDirectoryOffset = centralDirectoryOffset;
+			this.trailingMetadataLength = trailingMetadataLength;
+		}
+
+		List<EntryData> entries() {
+			return entries;
+		}
+
+		long centralDirectoryOffset() {
+			return centralDirectoryOffset;
+		}
+
+		long trailingMetadataLength() {
+			return trailingMetadataLength;
+		}
 	}
 
-	record CentralDirectoryData(long entryCount, long size, long offset) {
+	static final class CentralDirectoryData {
+		private final long entryCount;
+		private final long size;
+		private final long offset;
+
+		CentralDirectoryData(long entryCount, long size, long offset) {
+			this.entryCount = entryCount;
+			this.size = size;
+			this.offset = offset;
+		}
+
+		long entryCount() {
+			return entryCount;
+		}
+
+		long size() {
+			return size;
+		}
+
+		long offset() {
+			return offset;
+		}
 	}
 }

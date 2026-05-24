@@ -51,10 +51,13 @@ public enum CompressionMethod {
 	 * @return the matching compression method, or {@code null} if unsupported.
 	 */
 	public static CompressionMethod fromCode(int code) {
-		return switch (code) {
-		case 0 -> STORED;
-		case 8 -> DEFLATED;
-		default -> null;
-		};
+		switch (code) {
+		case 0:
+			return STORED;
+		case 8:
+			return DEFLATED;
+		default:
+			return null;
+		}
 	}
 }

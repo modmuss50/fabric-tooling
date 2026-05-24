@@ -31,8 +31,18 @@ interface Payload extends Closeable {
 	static Payload copyOf(InputStream inputStream) throws IOException {
 		Path tempFile = Files.createTempFile("fabric-zip-entry-", ".bin");
 
-		try (inputStream; OutputStream outputStream = Files.newOutputStream(tempFile)) {
-			inputStream.transferTo(outputStream);
+		try (InputStream source = inputStream; OutputStream outputStream = Files.newOutputStream(tempFile)) {
+			byte[] buffer = new byte[8192];
+
+			while (true) {
+				int read = source.read(buffer);
+
+				if (read < 0) {
+					break;
+				}
+
+				outputStream.write(buffer, 0, read);
+			}
 		} catch (IOException | RuntimeException error) {
 			Files.deleteIfExists(tempFile);
 			throw error;

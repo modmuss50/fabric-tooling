@@ -39,20 +39,26 @@ public enum JavaCompressionCodec implements CompressionCodec {
 
 	@Override
 	public OutputStream compress(CompressionMethod method, OutputStream compressedData) throws IOException {
-		return switch (method) {
-		case STORED -> compressedData;
-		case DEFLATED -> newDeflaterStream(compressedData);
-		default -> throw new UnsupportedZipFeatureException("Unsupported compression method: " + method);
-		};
+		switch (method) {
+		case STORED:
+			return compressedData;
+		case DEFLATED:
+			return newDeflaterStream(compressedData);
+		default:
+			throw new UnsupportedZipFeatureException("Unsupported compression method: " + method);
+		}
 	}
 
 	@Override
 	public InputStream decompress(ZipEntryView entry, InputStream compressedData) throws IOException {
-		return switch (entry.getMethod()) {
-		case STORED -> compressedData;
-		case DEFLATED -> newInflaterStream(compressedData);
-		default -> throw new UnsupportedZipFeatureException("Unsupported compression method: " + entry.getMethod());
-		};
+		switch (entry.getMethod()) {
+		case STORED:
+			return compressedData;
+		case DEFLATED:
+			return newInflaterStream(compressedData);
+		default:
+			throw new UnsupportedZipFeatureException("Unsupported compression method: " + entry.getMethod());
+		}
 	}
 
 	private static InputStream newInflaterStream(InputStream compressedData) {
