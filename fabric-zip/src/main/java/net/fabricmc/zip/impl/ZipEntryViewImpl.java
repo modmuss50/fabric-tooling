@@ -17,6 +17,7 @@
 package net.fabricmc.zip.impl;
 
 import java.nio.file.attribute.FileTime;
+import java.util.Objects;
 
 import org.jetbrains.annotations.Nullable;
 
@@ -26,7 +27,6 @@ import net.fabricmc.zip.api.ZipEntryView;
 public final class ZipEntryViewImpl implements ZipEntryView {
 	private final Object archive;
 	private final String name;
-	private final @Nullable String comment;
 	private final CompressionMethod method;
 	private final int flags;
 	private final long crc32;
@@ -35,9 +35,8 @@ public final class ZipEntryViewImpl implements ZipEntryView {
 	private final long localHeaderOffset;
 	private final long centralDirectoryOffset;
 	private final boolean directory;
-	private final @Nullable FileTime lastModifiedTime;
-	private final @Nullable FileTime lastAccessTime;
-	private final @Nullable FileTime creationTime;
+	private final @Nullable LazyMetadataSupplier metadataSupplier;
+	private volatile @Nullable LazyMetadata metadata;
 	private volatile long dataOffset = -1L;
 
 	ZipEntryViewImpl(
@@ -58,7 +57,6 @@ public final class ZipEntryViewImpl implements ZipEntryView {
 	) {
 		this.archive = archive;
 		this.name = name;
-		this.comment = comment;
 		this.method = method;
 		this.flags = flags;
 		this.crc32 = crc32;
@@ -67,9 +65,34 @@ public final class ZipEntryViewImpl implements ZipEntryView {
 		this.localHeaderOffset = localHeaderOffset;
 		this.centralDirectoryOffset = centralDirectoryOffset;
 		this.directory = directory;
-		this.lastModifiedTime = lastModifiedTime;
-		this.lastAccessTime = lastAccessTime;
-		this.creationTime = creationTime;
+		this.metadataSupplier = null;
+		this.metadata = new LazyMetadata(comment, lastModifiedTime, lastAccessTime, creationTime);
+	}
+
+	ZipEntryViewImpl(
+			Object archive,
+			String name,
+			CompressionMethod method,
+			int flags,
+			long crc32,
+			long compressedSize,
+			long uncompressedSize,
+			long localHeaderOffset,
+			long centralDirectoryOffset,
+			boolean directory,
+			LazyMetadataSupplier metadataSupplier
+	) {
+		this.archive = archive;
+		this.name = name;
+		this.method = method;
+		this.flags = flags;
+		this.crc32 = crc32;
+		this.compressedSize = compressedSize;
+		this.uncompressedSize = uncompressedSize;
+		this.localHeaderOffset = localHeaderOffset;
+		this.centralDirectoryOffset = centralDirectoryOffset;
+		this.directory = directory;
+		this.metadataSupplier = Objects.requireNonNull(metadataSupplier, "metadataSupplier");
 	}
 
 	Object archive() {
@@ -91,7 +114,7 @@ public final class ZipEntryViewImpl implements ZipEntryView {
 
 	@Override
 	public @Nullable String getComment() {
-		return comment;
+		return metadata().comment();
 	}
 
 	@Override
@@ -136,16 +159,48 @@ public final class ZipEntryViewImpl implements ZipEntryView {
 
 	@Override
 	public @Nullable FileTime getLastModifiedTime() {
-		return lastModifiedTime;
+		return metadata().lastModifiedTime();
 	}
 
 	@Override
 	public @Nullable FileTime getLastAccessTime() {
-		return lastAccessTime;
+		return metadata().lastAccessTime();
 	}
 
 	@Override
 	public @Nullable FileTime getCreationTime() {
-		return creationTime;
+		return metadata().creationTime();
+	}
+
+	private LazyMetadata metadata() {
+		LazyMetadata resolved = metadata;
+
+		if (resolved != null) {
+			return resolved;
+		}
+
+		synchronized (this) {
+			resolved = metadata;
+
+			if (resolved == null) {
+				resolved = Objects.requireNonNull(metadataSupplier, "metadataSupplier").load();
+				metadata = resolved;
+			}
+		}
+
+		return resolved;
+	}
+
+	@FunctionalInterface
+	interface LazyMetadataSupplier {
+		LazyMetadata load();
+	}
+
+	record LazyMetadata(
+			@Nullable String comment,
+			@Nullable FileTime lastModifiedTime,
+			@Nullable FileTime lastAccessTime,
+			@Nullable FileTime creationTime
+	) {
 	}
 }

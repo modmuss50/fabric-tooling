@@ -18,9 +18,9 @@ package net.fabricmc.zip.impl;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -30,7 +30,6 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import net.fabricmc.zip.api.CompressionCodec;
-import net.fabricmc.zip.api.CompressionMethod;
 import net.fabricmc.zip.api.MalformedZipException;
 import net.fabricmc.zip.api.UnsupportedZipFeatureException;
 import net.fabricmc.zip.api.ZipView;
@@ -44,6 +43,7 @@ public final class LazyPathZipViewImpl implements ZipView {
 	private final EntryIndex[] entryIndexes;
 	private final NameIndex nameIndex;
 	private final ZipEntryViewImpl[] entryCache;
+	private final Object[] entryLocks;
 	private final AtomicBoolean closed = new AtomicBoolean();
 	private final Object materializationLock = new Object();
 
@@ -57,6 +57,8 @@ public final class LazyPathZipViewImpl implements ZipView {
 		this.entryIndexes = entryIndexes;
 		this.nameIndex = nameIndex;
 		this.entryCache = new ZipEntryViewImpl[entryIndexes.length];
+		this.entryLocks = new Object[entryIndexes.length];
+		Arrays.setAll(entryLocks, ignored -> new Object());
 	}
 
 	public static ZipView open(Path path, CompressionCodec compressionCodec) throws IOException {
@@ -175,12 +177,12 @@ public final class LazyPathZipViewImpl implements ZipView {
 			return scanEntry(name);
 		}
 
-		return entryAt(entryIndex.arrayIndex());
+		return entryAt(entryIndex.arrayIndex(), name);
 	}
 
 	private ZipEntryViewImpl scanEntry(String name) {
 		for (EntryIndex entryIndex : entryIndexes) {
-			ZipEntryViewImpl entry = entryAt(entryIndex.arrayIndex());
+			ZipEntryViewImpl entry = entryAt(entryIndex.arrayIndex(), null);
 
 			if (entry.getName().equals(name)) {
 				return entry;
@@ -195,7 +197,7 @@ public final class LazyPathZipViewImpl implements ZipView {
 		Map<String, net.fabricmc.zip.api.ZipEntryView> materializedEntriesByName = new LinkedHashMap<>();
 
 		for (EntryIndex entryIndex : entryIndexes) {
-			ZipEntryViewImpl entry = entryAt(entryIndex.arrayIndex());
+			ZipEntryViewImpl entry = entryAt(entryIndex.arrayIndex(), null);
 			materializedEntries.add(entry);
 			materializedEntriesByName.putIfAbsent(entry.getName(), entry);
 		}
@@ -260,44 +262,12 @@ public final class LazyPathZipViewImpl implements ZipView {
 			throw new MalformedZipException("Truncated central directory entry");
 		}
 
-		int extraOffset = variableOffset + nameLength;
-
-		if (uncompressedSize == UINT32_MAX || compressedSize == UINT32_MAX || localHeaderOffset == UINT32_MAX) {
-			ZipParser.Zip64Values zip64Values = ZipParser.parseZip64Extra(
-					centralDirectory,
-					extraOffset,
-					extraLength,
-					uncompressedSize == UINT32_MAX,
-					compressedSize == UINT32_MAX,
-					localHeaderOffset == UINT32_MAX,
-					false
-			);
-
-			if (uncompressedSize == UINT32_MAX) {
-				uncompressedSize = zip64Values.uncompressedSize();
-			}
-
-			if (compressedSize == UINT32_MAX) {
-				compressedSize = zip64Values.compressedSize();
-			}
-
-			if (localHeaderOffset == UINT32_MAX) {
-				localHeaderOffset = zip64Values.localHeaderOffset();
-			}
-		}
-
-		CompressionMethod method = CompressionMethod.fromCode(methodCode);
-
-		if (method == null) {
-			throw new UnsupportedZipFeatureException("Unsupported compression method: " + methodCode);
-		}
-
 		return new EntryIndex(
 				arrayIndex,
 				offset,
 				nextOffset,
 				flags,
-				method,
+				methodCode,
 				crc32,
 				compressedSize,
 				uncompressedSize,
@@ -312,15 +282,22 @@ public final class LazyPathZipViewImpl implements ZipView {
 		);
 	}
 
-	private ZipEntryViewImpl entryAt(int index) {
+	private ZipEntryViewImpl entryAt(int index, String preferredName) {
 		ZipEntryViewImpl entry = entryCache[index];
 
 		if (entry != null) {
 			return entry;
 		}
 
-		entry = createEntry(entryIndexes[index]);
-		entryCache[index] = entry;
+		synchronized (entryLocks[index]) {
+			entry = entryCache[index];
+
+			if (entry == null) {
+				entry = createEntry(entryIndexes[index], preferredName);
+				entryCache[index] = entry;
+			}
+		}
+
 		return entry;
 	}
 
@@ -340,50 +317,99 @@ public final class LazyPathZipViewImpl implements ZipView {
 		return hash;
 	}
 
-	private ZipEntryViewImpl createEntry(EntryIndex entryIndex) {
-		ZipParser.Timestamps timestamps = parseTimestamps(entryIndex);
-		String name = new String(
+	private ZipEntryViewImpl createEntry(EntryIndex entryIndex, String preferredName) {
+		ResolvedEntryData resolvedEntry = resolveEntryData(entryIndex);
+		String name = preferredName != null ? preferredName : decodeName(entryIndex);
+
+		return new ZipEntryViewImpl(
+				this,
+				name,
+				resolvedEntry.method(),
+				entryIndex.flags(),
+				entryIndex.crc32(),
+				resolvedEntry.compressedSize(),
+				resolvedEntry.uncompressedSize(),
+				resolvedEntry.localHeaderOffset(),
+				entryIndex.centralDirectoryOffset(),
+				name.endsWith("/"),
+				() -> loadMetadata(entryIndex)
+		);
+	}
+
+	private ResolvedEntryData resolveEntryData(EntryIndex entryIndex) {
+		long compressedSize = entryIndex.compressedSize();
+		long uncompressedSize = entryIndex.uncompressedSize();
+		long localHeaderOffset = entryIndex.localHeaderOffset();
+
+		if (uncompressedSize == UINT32_MAX || compressedSize == UINT32_MAX || localHeaderOffset == UINT32_MAX) {
+			try {
+				ZipParser.Zip64Values zip64Values = ZipParser.parseZip64Extra(
+						centralDirectory,
+						entryIndex.variableOffset() + entryIndex.nameLength(),
+						entryIndex.extraLength(),
+						uncompressedSize == UINT32_MAX,
+						compressedSize == UINT32_MAX,
+						localHeaderOffset == UINT32_MAX,
+						false
+				);
+
+				if (uncompressedSize == UINT32_MAX) {
+					uncompressedSize = zip64Values.uncompressedSize();
+				}
+
+				if (compressedSize == UINT32_MAX) {
+					compressedSize = zip64Values.compressedSize();
+				}
+
+				if (localHeaderOffset == UINT32_MAX) {
+					localHeaderOffset = zip64Values.localHeaderOffset();
+				}
+			} catch (IOException exception) {
+				throw new IllegalStateException("Failed to resolve ZIP64 entry metadata", exception);
+			}
+		}
+
+		net.fabricmc.zip.api.CompressionMethod method = net.fabricmc.zip.api.CompressionMethod.fromCode(entryIndex.methodCode());
+
+		if (method == null) {
+			throw new IllegalStateException("Unsupported compression method: " + entryIndex.methodCode());
+		}
+
+		return new ResolvedEntryData(method, compressedSize, uncompressedSize, localHeaderOffset);
+	}
+
+	private String decodeName(EntryIndex entryIndex) {
+		return new String(
 				centralDirectory,
 				entryIndex.variableOffset(),
 				entryIndex.nameLength(),
 				ZipParser.charsetForFlags(entryIndex.flags())
 		);
-		String comment = entryIndex.commentLength() == 0 ? null : new String(
-				centralDirectory,
-				entryIndex.variableOffset() + entryIndex.nameLength() + entryIndex.extraLength(),
-				entryIndex.commentLength(),
-				ZipParser.charsetForFlags(entryIndex.flags())
-		);
-
-		return new ZipEntryViewImpl(
-				this,
-				name,
-				comment,
-				entryIndex.method(),
-				entryIndex.flags(),
-				entryIndex.crc32(),
-				entryIndex.compressedSize(),
-				entryIndex.uncompressedSize(),
-				entryIndex.localHeaderOffset(),
-				entryIndex.centralDirectoryOffset(),
-				name.endsWith("/"),
-				timestamps.lastModifiedTime(),
-				timestamps.lastAccessTime(),
-				timestamps.creationTime()
-		);
 	}
 
-	private ZipParser.Timestamps parseTimestamps(EntryIndex entryIndex) {
+	private ZipEntryViewImpl.LazyMetadata loadMetadata(EntryIndex entryIndex) {
 		try {
-			return ZipParser.parseTimestamps(
+			ZipParser.Timestamps timestamps = ZipParser.parseTimestamps(
 					centralDirectory,
 					entryIndex.variableOffset() + entryIndex.nameLength(),
 					entryIndex.extraLength(),
 					entryIndex.lastModifiedDate(),
 					entryIndex.lastModifiedTimeBits()
 			);
+			String comment = entryIndex.commentLength() == 0 ? null : new String(
+					centralDirectory,
+					entryIndex.variableOffset() + entryIndex.nameLength() + entryIndex.extraLength(),
+					entryIndex.commentLength(),
+					ZipParser.charsetForFlags(entryIndex.flags())
+			);
+			return new ZipEntryViewImpl.LazyMetadata(
+					comment,
+					timestamps.lastModifiedTime(),
+					timestamps.lastAccessTime(),
+					timestamps.creationTime()
+			);
 		} catch (IOException exception) {
-			throw new UncheckedIOException(exception);
+			throw new IllegalStateException("Failed to parse ZIP entry metadata", exception);
 		}
 	}
 
@@ -394,6 +420,14 @@ public final class LazyPathZipViewImpl implements ZipView {
 	}
 
 	private record MaterializedEntries(List<net.fabricmc.zip.api.ZipEntryView> entries, Map<String, net.fabricmc.zip.api.ZipEntryView> entriesByName) {
+	}
+
+	private record ResolvedEntryData(
+			net.fabricmc.zip.api.CompressionMethod method,
+			long compressedSize,
+			long uncompressedSize,
+			long localHeaderOffset
+	) {
 	}
 
 	private static final class NameIndex {
@@ -532,7 +566,7 @@ public final class LazyPathZipViewImpl implements ZipView {
 			int centralDirectoryOffset,
 			int nextOffset,
 			int flags,
-			CompressionMethod method,
+			int methodCode,
 			long crc32,
 			long compressedSize,
 			long uncompressedSize,
