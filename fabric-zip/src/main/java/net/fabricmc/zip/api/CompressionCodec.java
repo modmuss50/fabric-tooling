@@ -23,6 +23,7 @@ import java.io.OutputStream;
 import org.jetbrains.annotations.ApiStatus;
 
 import net.fabricmc.zip.impl.JavaCompressionCodec;
+import net.fabricmc.zip.impl.LibDeflateCompressionCodec;
 
 /**
  * Compresses and inflates ZIP entry payloads.
@@ -36,6 +37,24 @@ public interface CompressionCodec {
 	 */
 	static CompressionCodec javaDefault() {
 		return JavaCompressionCodec.INSTANCE;
+	}
+
+	/**
+	 * Returns the preferred default codec for the current runtime.
+	 *
+	 * @return the preferred default codec for the current runtime.
+	 */
+	static CompressionCodec defaultCodec() {
+		return LibDeflateCompressionCodec.INSTANCE.isAvailable() ? LibDeflateCompressionCodec.INSTANCE : javaDefault();
+	}
+
+	/**
+	 * Returns a codec backed by the native {@code libdeflate} library.
+	 *
+	 * @return a codec backed by the native {@code libdeflate} library.
+	 */
+	static CompressionCodec libdeflate() {
+		return LibDeflateCompressionCodec.INSTANCE;
 	}
 
 	/**

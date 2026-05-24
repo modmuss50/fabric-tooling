@@ -41,7 +41,19 @@ public interface ZipView extends Closeable {
 	 * @throws IOException if the archive cannot be opened.
 	 */
 	static ZipView open(Path path) throws IOException {
-		return LazyPathZipViewImpl.open(path, CompressionCodec.javaDefault());
+		return LazyPathZipViewImpl.open(path, CompressionCodec.defaultCodec());
+	}
+
+	/**
+	 * Opens a ZIP archive backed by the supplied path using the given compression codec.
+	 *
+	 * @param path the archive path.
+	 * @param compressionCodec the codec used to inflate compressed entry data.
+	 * @return a read-only view of the archive.
+	 * @throws IOException if the archive cannot be opened.
+	 */
+	static ZipView open(Path path, CompressionCodec compressionCodec) throws IOException {
+		return LazyPathZipViewImpl.open(path, compressionCodec);
 	}
 
 	/**
@@ -52,7 +64,7 @@ public interface ZipView extends Closeable {
 	 * @throws IOException if the archive cannot be opened.
 	 */
 	static ZipView open(ZipByteSource source) throws IOException {
-		return open(source, CompressionCodec.javaDefault());
+		return open(source, CompressionCodec.defaultCodec());
 	}
 
 	/**

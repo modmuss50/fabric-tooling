@@ -25,6 +25,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.attribute.FileTime;
 
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import net.fabricmc.zip.api.CompressionCodec;
@@ -35,7 +36,7 @@ public class CompressionCodecTest {
 	@Test
 	void storedDataPassesThroughUnchanged() throws IOException {
 		byte[] data = "stored".getBytes();
-		byte[] inflated = readAllBytes(CompressionCodec.javaDefault().decompress(new TestEntry("stored.txt", CompressionMethod.STORED), new ByteArrayInputStream(data)));
+		byte[] inflated = readAllBytes(CompressionCodec.javaDefault().decompress(new TestEntry("stored.txt", CompressionMethod.STORED, data.length), new ByteArrayInputStream(data)));
 		assertArrayEquals(data, inflated);
 	}
 
@@ -62,7 +63,21 @@ public class CompressionCodecTest {
 			compressedOutput.write(expected);
 		}
 
-		byte[] inflated = readAllBytes(CompressionCodec.javaDefault().decompress(new TestEntry("hello.txt", CompressionMethod.DEFLATED), new ByteArrayInputStream(compressed.toByteArray())));
+		byte[] inflated = readAllBytes(CompressionCodec.javaDefault().decompress(new TestEntry("hello.txt", CompressionMethod.DEFLATED, expected.length), new ByteArrayInputStream(compressed.toByteArray())));
+		assertArrayEquals(expected, inflated);
+	}
+
+	@Test
+	void libdeflateCodecRoundTripsDeflatedData() throws IOException {
+		CompressionCodec codec = requireLibdeflate();
+		byte[] expected = "hello libdeflate".getBytes();
+		ByteArrayOutputStream compressed = new ByteArrayOutputStream();
+
+		try (OutputStream compressedOutput = codec.compress(CompressionMethod.DEFLATED, compressed)) {
+			compressedOutput.write(expected);
+		}
+
+		byte[] inflated = readAllBytes(codec.decompress(new TestEntry("hello.txt", CompressionMethod.DEFLATED, expected.length), new ByteArrayInputStream(compressed.toByteArray())));
 		assertArrayEquals(expected, inflated);
 	}
 
@@ -70,7 +85,24 @@ public class CompressionCodecTest {
 		return stream.readAllBytes();
 	}
 
-	private record TestEntry(String name, CompressionMethod method) implements ZipEntryView {
+	private static CompressionCodec requireLibdeflate() {
+		try {
+			CompressionCodec codec = CompressionCodec.libdeflate();
+
+			try (OutputStream ignored = codec.compress(CompressionMethod.DEFLATED, OutputStream.nullOutputStream())) {
+			}
+
+			return codec;
+		} catch (RuntimeException exception) {
+			Assumptions.abort("libdeflate codec unavailable: " + exception.getMessage());
+			throw exception;
+		} catch (IOException exception) {
+			Assumptions.abort("libdeflate codec unavailable: " + exception.getMessage());
+			throw new RuntimeException(exception);
+		}
+	}
+
+	private record TestEntry(String name, CompressionMethod method, long uncompressedSize) implements ZipEntryView {
 		@Override
 		public String getName() {
 			return name;
@@ -103,7 +135,7 @@ public class CompressionCodecTest {
 
 		@Override
 		public long getUncompressedSize() {
-			return 0;
+			return uncompressedSize;
 		}
 
 		@Override

@@ -31,12 +31,14 @@ public final class ZipOptions {
 	private final boolean sparse;
 	private final WriteMode writeMode;
 	private final CompressionMethod defaultCompressionMethod;
+	private final CompressionCodec compressionCodec;
 
 	private ZipOptions(Builder builder) {
 		this.reproducible = builder.reproducible;
 		this.sparse = builder.sparse;
 		this.writeMode = builder.writeMode;
 		this.defaultCompressionMethod = builder.defaultCompressionMethod;
+		this.compressionCodec = builder.compressionCodec;
 	}
 
 	/**
@@ -76,6 +78,15 @@ public final class ZipOptions {
 	}
 
 	/**
+	 * Returns the codec used to compress and inflate entry data.
+	 *
+	 * @return the codec used to compress and inflate entry data.
+	 */
+	public CompressionCodec compressionCodec() {
+		return compressionCodec;
+	}
+
+	/**
 	 * Builds ZIP options from the supplied builder callback.
 	 *
 	 * @param consumer configures the builder.
@@ -95,6 +106,7 @@ public final class ZipOptions {
 		private boolean sparse;
 		private WriteMode writeMode = WriteMode.ON_CLOSE;
 		private CompressionMethod defaultCompressionMethod = CompressionMethod.DEFLATED;
+		private CompressionCodec compressionCodec = CompressionCodec.defaultCodec();
 
 		/**
 		 * Creates a builder with default ZIP options.
@@ -147,6 +159,17 @@ public final class ZipOptions {
 		}
 
 		/**
+		 * Sets the codec used to compress and inflate entry data.
+		 *
+		 * @param compressionCodec the compression codec.
+		 * @return this builder.
+		 */
+		public Builder compressionCodec(CompressionCodec compressionCodec) {
+			this.compressionCodec = Objects.requireNonNull(compressionCodec, "compressionCodec");
+			return this;
+		}
+
+		/**
 		 * Validates and creates the configured ZIP options.
 		 *
 		 * @return the configured ZIP options.
@@ -167,6 +190,8 @@ public final class ZipOptions {
 			if (sparse && !isMacOs()) {
 				throw new UnsupportedOperationException("Sparse ZIP mode is currently supported on macOS only");
 			}
+
+			Objects.requireNonNull(compressionCodec, "compressionCodec");
 
 			return new ZipOptions(this);
 		}

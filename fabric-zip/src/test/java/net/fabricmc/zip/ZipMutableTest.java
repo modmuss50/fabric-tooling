@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.URI;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
@@ -42,12 +43,14 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
+import net.fabricmc.zip.api.CompressionCodec;
 import net.fabricmc.zip.api.CompressionMethod;
 import net.fabricmc.zip.api.WriteMode;
 import net.fabricmc.zip.api.Zip;
@@ -101,6 +104,22 @@ public class ZipMutableTest {
 				"bytes.bin", new byte[] {1, 2, 3},
 				"stream.txt", "stream".getBytes()
 		));
+	}
+
+	@Test
+	void mutableZipCanUseLibdeflateCodecWhenAvailable() throws Exception {
+		Path path = tempDir.resolve("libdeflate.zip");
+		CompressionCodec codec = requireLibdeflate();
+
+		try (Zip zip = Zip.create(path, options -> options.compressionCodec(codec))) {
+			zip.add("value.txt", "hello libdeflate".getBytes());
+		}
+
+		try (ZipView view = ZipView.open(path, codec)) {
+			assertEquals("hello libdeflate", new String(readAllBytes(view.open(view.getEntry("value.txt").orElseThrow()))));
+		}
+
+		assertZipReadableByJava(path, Map.of("value.txt", "hello libdeflate".getBytes()));
 	}
 
 	@Test
@@ -550,6 +569,23 @@ public class ZipMutableTest {
 
 	private static Callable<byte[]> readEntry(Zip zip, String name) {
 		return () -> readAllBytes(zip.open(zip.getEntry(name).orElseThrow()));
+	}
+
+	private static CompressionCodec requireLibdeflate() {
+		try {
+			CompressionCodec codec = CompressionCodec.libdeflate();
+
+			try (var ignored = codec.compress(CompressionMethod.DEFLATED, OutputStream.nullOutputStream())) {
+			}
+
+			return codec;
+		} catch (RuntimeException exception) {
+			Assumptions.abort("libdeflate codec unavailable: " + exception.getMessage());
+			throw exception;
+		} catch (IOException exception) {
+			Assumptions.abort("libdeflate codec unavailable: " + exception.getMessage());
+			throw new RuntimeException(exception);
+		}
 	}
 
 	private void assertLargeArchiveReplaceAllWorks(Path path, int entryCount, Consumer<net.fabricmc.zip.api.ZipOptions.Builder> options) throws Exception {

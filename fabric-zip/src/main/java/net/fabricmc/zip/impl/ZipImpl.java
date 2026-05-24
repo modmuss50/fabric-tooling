@@ -98,7 +98,7 @@ public final class ZipImpl implements Zip {
 		this.trailingMetadataOffset = trailingMetadataOffset;
 		this.trailingMetadataLength = trailingMetadataLength;
 		this.dirty = dirty;
-		this.compressionCodec = CompressionCodec.javaDefault();
+		this.compressionCodec = options.compressionCodec();
 		this.holePuncher = HolePuncher.systemDefault();
 		this.snapshot = MutableZipSnapshot.create(this, entriesByName.values());
 	}
