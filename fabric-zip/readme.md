@@ -13,6 +13,10 @@ The current implementation supports both read-only access and mutable local-file
   - `add(String, InputStream)`
   - `remove(String)`
   - `copy(ZipView, String)` to copy raw compressed entry data without recompressing
+  - `copy(ZipView, String, String)` to copy an entry under a new name without recompressing
+  - `replace(String, byte[])`
+  - `replace(String, InputStream)`
+  - `modify(String, Function<byte[], byte[]>)` for atomic read-transform-write updates
 - `ZipOptions` controls mutable ZIP behavior:
   - `reproducible`
   - `sparse`
@@ -56,3 +60,18 @@ Implementation details, parsing logic, writer logic, backend code, snapshot stat
 - Mutable ZIPs currently assume local filesystem storage and take an exclusive file lock while open for mutation.
 - Sparse mode is currently macOS-only and routed through an OS-specific hole-punch implementation.
 - `ZipReference` remains read-only; it is not used for mutable ZIP sharing.
+
+## Benchmarks
+
+JMH benchmarks live under `src/jmh/java` and compare `fabric-zip` against `java.util.zip.ZipFile` and NIO zipfs.
+The current suite covers both open-per-operation and already-open archive access for:
+
+- small-entry archives
+- a large-entry archive
+- archives with many entries
+
+Run them with:
+
+```bash
+./gradlew :fabric-zip:jmh
+```

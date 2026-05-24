@@ -9,6 +9,34 @@ plugins {
 
 version = "0.1.0"
 
+def jmhSourceSet = sourceSets.create("jmh")
+
+configurations {
+	jmhImplementation.extendsFrom implementation
+	jmhCompileOnly.extendsFrom compileOnly
+	jmhRuntimeOnly.extendsFrom runtimeOnly
+	jmhAnnotationProcessor.extendsFrom annotationProcessor
+}
+
+jmhSourceSet.java.srcDir("src/jmh/java")
+jmhSourceSet.resources.srcDir("src/jmh/resources")
+jmhSourceSet.compileClasspath += sourceSets.main.output
+jmhSourceSet.runtimeClasspath += sourceSets.main.output
+
 dependencies {
 	compileOnly "org.jetbrains:annotations:26.0.2"
+	jmhImplementation "org.openjdk.jmh:jmh-core:1.37"
+	jmhAnnotationProcessor "org.openjdk.jmh:jmh-generator-annprocess:1.37"
+}
+
+tasks.named("check") {
+	dependsOn tasks.named("jmhClasses")
+}
+
+tasks.register("jmh", JavaExec) {
+	group = "benchmark"
+	description = "Runs the fabric-zip JMH benchmarks."
+	dependsOn tasks.named("jmhClasses")
+	classpath = jmhSourceSet.runtimeClasspath
+	mainClass = "org.openjdk.jmh.Main"
 }

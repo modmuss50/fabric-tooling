@@ -155,6 +155,46 @@ public class ZipMutableTest {
 	}
 
 	@Test
+	void copyManySmallFilesFromReadOnlySourceZip() throws Exception {
+		Path sourcePath = tempDir.resolve("source-many-small.zip");
+		Path destinationPath = tempDir.resolve("destination-many-small.zip");
+		TestZipBuilder sourceBuilder = new TestZipBuilder();
+		LinkedHashMap<String, byte[]> expectedEntries = new LinkedHashMap<>();
+
+		for (int i = 0; i < 300; i++) {
+			String name = "small/group-" + (i % 12) + "/entry-" + i + ".txt";
+			byte[] data = ("payload-" + i + "-" + "x".repeat(i % 9)).getBytes();
+			expectedEntries.put(name, data);
+			sourceBuilder.addDeflated(name, data);
+		}
+
+		Files.write(sourcePath, sourceBuilder.build());
+
+		try (ZipView source = ZipView.open(sourcePath);
+				Zip destination = Zip.create(destinationPath)) {
+			for (String name : expectedEntries.keySet()) {
+				destination.copy(source, name);
+			}
+
+			assertEquals(expectedEntries.size(), destination.entries().size());
+
+			for (Map.Entry<String, byte[]> entry : expectedEntries.entrySet()) {
+				assertArrayEquals(entry.getValue(), readAllBytes(destination.open(destination.getEntry(entry.getKey()).orElseThrow())));
+			}
+		}
+
+		try (ZipView destinationView = ZipView.open(destinationPath)) {
+			assertEquals(expectedEntries.size(), destinationView.entries().size());
+
+			for (Map.Entry<String, byte[]> entry : expectedEntries.entrySet()) {
+				assertArrayEquals(entry.getValue(), readAllBytes(destinationView.open(destinationView.getEntry(entry.getKey()).orElseThrow())));
+			}
+		}
+
+		assertZipReadableByJava(destinationPath, expectedEntries);
+	}
+
+	@Test
 	void replaceIsAtomicAndPreservesEntryName() throws Exception {
 		Path path = tempDir.resolve("replace.zip");
 
