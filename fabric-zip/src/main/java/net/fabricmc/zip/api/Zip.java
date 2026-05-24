@@ -21,6 +21,7 @@ import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 import org.jetbrains.annotations.ApiStatus;
 
@@ -56,6 +57,14 @@ public interface Zip extends ZipView {
 	void remove(String name) throws IOException;
 
 	void copy(ZipView source, String name) throws IOException;
+
+	void copy(ZipView source, String sourceName, String targetName) throws IOException;
+
+	void replace(String name, byte[] data) throws IOException;
+
+	void replace(String name, InputStream data) throws IOException;
+
+	void modify(String name, Function<byte[], byte[]> modifier) throws IOException;
 
 	static void requireName(String name) {
 		Objects.requireNonNull(name, "name");

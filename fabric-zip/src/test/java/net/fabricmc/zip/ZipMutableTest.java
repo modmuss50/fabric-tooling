@@ -137,6 +137,66 @@ public class ZipMutableTest {
 	}
 
 	@Test
+	void copySupportsRenamingTargetEntry() throws Exception {
+		Path sourcePath = tempDir.resolve("source-renamed.zip");
+		TestZipBuilder sourceBuilder = new TestZipBuilder();
+		sourceBuilder.addStored("original.txt", "copy me renamed".getBytes());
+		Files.write(sourcePath, sourceBuilder.build());
+		Path destinationPath = tempDir.resolve("destination-renamed.zip");
+
+		try (ZipView source = ZipView.open(sourcePath);
+				Zip destination = Zip.create(destinationPath)) {
+			destination.copy(source, "original.txt", "renamed.txt");
+			assertFalse(destination.contains("original.txt"));
+			assertEquals("copy me renamed", new String(readAllBytes(destination.open(destination.getEntry("renamed.txt").orElseThrow()))));
+		}
+
+		assertZipReadableByJava(destinationPath, Map.of("renamed.txt", "copy me renamed".getBytes()));
+	}
+
+	@Test
+	void replaceIsAtomicAndPreservesEntryName() throws Exception {
+		Path path = tempDir.resolve("replace.zip");
+
+		try (Zip zip = Zip.create(path)) {
+			zip.add("value.txt", "old".getBytes());
+			zip.replace("value.txt", "new".getBytes());
+			assertEquals("new", new String(readAllBytes(zip.open(zip.getEntry("value.txt").orElseThrow()))));
+			assertEquals(1, zip.entries().size());
+		}
+
+		assertZipReadableByJava(path, Map.of("value.txt", "new".getBytes()));
+	}
+
+	@Test
+	void modifyUpdatesExistingEntryAtomically() throws Exception {
+		Path path = tempDir.resolve("modify.zip");
+
+		try (Zip zip = Zip.create(path)) {
+			zip.add("value.txt", "base".getBytes());
+			zip.modify("value.txt", bytes -> (new String(bytes) + "-modified").getBytes());
+			assertEquals("base-modified", new String(readAllBytes(zip.open(zip.getEntry("value.txt").orElseThrow()))));
+		}
+
+		assertZipReadableByJava(path, Map.of("value.txt", "base-modified".getBytes()));
+	}
+
+	@Test
+	void modifyFailureLeavesOriginalEntryUntouched() throws Exception {
+		Path path = tempDir.resolve("modify-failure.zip");
+
+		try (Zip zip = Zip.create(path)) {
+			zip.add("value.txt", "stable".getBytes());
+			assertThrows(IllegalStateException.class, () -> zip.modify("value.txt", ignored -> {
+				throw new IllegalStateException("boom");
+			}));
+			assertEquals("stable", new String(readAllBytes(zip.open(zip.getEntry("value.txt").orElseThrow()))));
+		}
+
+		assertZipReadableByJava(path, Map.of("value.txt", "stable".getBytes()));
+	}
+
+	@Test
 	void immediateModeWritesArchiveAfterEachMutation() throws Exception {
 		Path path = tempDir.resolve("immediate.zip");
 

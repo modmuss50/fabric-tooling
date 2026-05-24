@@ -41,6 +41,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.Function;
 import java.util.zip.CRC32;
 import java.util.zip.Deflater;
 import java.util.zip.DeflaterOutputStream;
@@ -232,10 +233,16 @@ public final class ZipImpl implements Zip {
 
 	@Override
 	public void copy(ZipView source, String name) throws IOException {
+		copy(source, name, name);
+	}
+
+	@Override
+	public void copy(ZipView source, String sourceName, String targetName) throws IOException {
 		Objects.requireNonNull(source, "source");
-		Zip.requireName(name);
-		ZipEntryView sourceEntry = source.getEntry(name).orElseThrow(() -> new IllegalArgumentException("ZIP entry does not exist: " + name));
-		MutableZipEntry copiedEntry = stageCopiedEntry(sourceEntry, source.openRaw(sourceEntry));
+		Zip.requireName(sourceName);
+		Zip.requireName(targetName);
+		ZipEntryView sourceEntry = source.getEntry(sourceName).orElseThrow(() -> new IllegalArgumentException("ZIP entry does not exist: " + sourceName));
+		MutableZipEntry copiedEntry = stageCopiedEntry(targetName, sourceEntry, source.openRaw(sourceEntry));
 		boolean success = false;
 
 		try {
@@ -244,12 +251,12 @@ public final class ZipImpl implements Zip {
 			try {
 				ensureOpen();
 
-				if (entriesByName.containsKey(name)) {
-					throw new IllegalArgumentException("ZIP entry already exists: " + name);
+				if (entriesByName.containsKey(targetName)) {
+					throw new IllegalArgumentException("ZIP entry already exists: " + targetName);
 				}
 
 				LinkedHashMap<String, MutableZipEntry> updatedEntries = new LinkedHashMap<>(entriesByName);
-				updatedEntries.put(name, copiedEntry);
+				updatedEntries.put(targetName, copiedEntry);
 				commitUpdatedEntries(updatedEntries, Collections.emptyList());
 				success = true;
 			} finally {
@@ -259,6 +266,85 @@ public final class ZipImpl implements Zip {
 			if (!success) {
 				copiedEntry.payload.close();
 			}
+		}
+	}
+
+	@Override
+	public void replace(String name, byte[] data) throws IOException {
+		Objects.requireNonNull(data, "data");
+		replace(name, new ByteArrayInputStream(data));
+	}
+
+	@Override
+	public void replace(String name, InputStream data) throws IOException {
+		Zip.requireName(name);
+		Objects.requireNonNull(data, "data");
+
+		lock.writeLock().lock();
+
+		try {
+			ensureOpen();
+			MutableZipEntry existingEntry = entriesByName.get(name);
+
+			if (existingEntry == null) {
+				throw new IllegalArgumentException("ZIP entry does not exist: " + name);
+			}
+
+			MutableZipEntry replacementEntry = stageAddedEntry(name, data, existingEntry.method);
+			boolean success = false;
+
+			try {
+				LinkedHashMap<String, MutableZipEntry> updatedEntries = new LinkedHashMap<>(entriesByName);
+				updatedEntries.put(name, replacementEntry);
+				commitUpdatedEntries(updatedEntries, List.of(existingEntry.payload));
+				success = true;
+			} finally {
+				if (!success) {
+					replacementEntry.payload.close();
+				}
+			}
+		} finally {
+			lock.writeLock().unlock();
+		}
+	}
+
+	@Override
+	public void modify(String name, Function<byte[], byte[]> modifier) throws IOException {
+		Zip.requireName(name);
+		Objects.requireNonNull(modifier, "modifier");
+
+		lock.writeLock().lock();
+
+		try {
+			ensureOpen();
+			MutableZipEntry existingEntry = entriesByName.get(name);
+
+			if (existingEntry == null) {
+				throw new IllegalArgumentException("ZIP entry does not exist: " + name);
+			}
+
+			byte[] inputBytes;
+
+			try (InputStream inputStream = open(snapshot.entriesByName().get(name))) {
+				inputBytes = inputStream.readAllBytes();
+			}
+
+			byte[] updatedBytes = Objects.requireNonNull(modifier.apply(inputBytes), "modifier result");
+			MutableZipEntry replacementEntry = stageAddedEntry(name, new ByteArrayInputStream(updatedBytes), existingEntry.method);
+			boolean success = false;
+
+			try {
+				LinkedHashMap<String, MutableZipEntry> updatedEntries = new LinkedHashMap<>(entriesByName);
+				updatedEntries.put(name, replacementEntry);
+				commitUpdatedEntries(updatedEntries, List.of(existingEntry.payload));
+				success = true;
+			} finally {
+				if (!success) {
+					replacementEntry.payload.close();
+				}
+			}
+		} finally {
+			lock.writeLock().unlock();
 		}
 	}
 
@@ -382,7 +468,10 @@ public final class ZipImpl implements Zip {
 	}
 
 	private MutableZipEntry stageAddedEntry(String name, InputStream data) throws IOException {
-		CompressionMethod method = options.defaultCompressionMethod();
+		return stageAddedEntry(name, data, options.defaultCompressionMethod());
+	}
+
+	private MutableZipEntry stageAddedEntry(String name, InputStream data, CompressionMethod method) throws IOException {
 		FileTime modifiedTime = defaultTimestampForNewEntry();
 		FileTime accessTime = modifiedTime;
 		FileTime creationTime = modifiedTime;
@@ -427,7 +516,7 @@ public final class ZipImpl implements Zip {
 		);
 	}
 
-	private MutableZipEntry stageCopiedEntry(ZipEntryView sourceEntry, InputStream rawData) throws IOException {
+	private MutableZipEntry stageCopiedEntry(String targetName, ZipEntryView sourceEntry, InputStream rawData) throws IOException {
 		try (rawData) {
 			Payload payload = Payload.copyOf(rawData);
 			FileTime modifiedTime = normalizedTimestamp(sourceEntry.getLastModifiedTime());
@@ -436,14 +525,14 @@ public final class ZipImpl implements Zip {
 			int flags = ZipConstants.GENERAL_PURPOSE_FLAG_UTF8;
 
 			return new MutableZipEntry(
-					sourceEntry.getName(),
+					targetName,
 					sourceEntry.getComment(),
 					sourceEntry.getMethod(),
 					flags,
 					sourceEntry.getCrc32(),
 					sourceEntry.getCompressedSize(),
 					sourceEntry.getUncompressedSize(),
-					sourceEntry.isDirectory(),
+					targetName.endsWith("/"),
 					modifiedTime,
 					accessTime,
 					creationTime,
