@@ -45,7 +45,7 @@ final class ZipParser {
 		return parseArchive(source).entries();
 	}
 
-	static ParsedZip parseArchive(ZipByteSource source) throws IOException {
+	static CentralDirectoryData locateCentralDirectory(ZipByteSource source) throws IOException {
 		long size = source.size();
 		EndOfCentralDirectory endOfCentralDirectory = locateEndOfCentralDirectory(source, size);
 
@@ -59,6 +59,12 @@ final class ZipParser {
 			throw new UnsupportedZipFeatureException("ZIP archives with more than " + Integer.MAX_VALUE + " entries are not supported");
 		}
 
+		return new CentralDirectoryData(centralDirectory.entryCount, centralDirectory.size, centralDirectory.offset);
+	}
+
+	static ParsedZip parseArchive(ZipByteSource source) throws IOException {
+		long size = source.size();
+		CentralDirectoryData centralDirectory = locateCentralDirectory(source);
 		List<EntryData> entries = new ArrayList<>((int) centralDirectory.entryCount);
 		long position = centralDirectory.offset;
 
@@ -227,7 +233,11 @@ final class ZipParser {
 		throw new MalformedZipException("Could not locate end of central directory record");
 	}
 
-	private static Zip64Values parseZip64Extra(byte[] extraBytes, boolean needsUncompressedSize, boolean needsCompressedSize, boolean needsLocalHeaderOffset, boolean needsDiskNumber) throws IOException {
+	static Charset charsetForFlags(int flags) {
+		return (flags & ZipConstants.GENERAL_PURPOSE_FLAG_UTF8) != 0 ? StandardCharsets.UTF_8 : LEGACY_ZIP_CHARSET;
+	}
+
+	static Zip64Values parseZip64Extra(byte[] extraBytes, boolean needsUncompressedSize, boolean needsCompressedSize, boolean needsLocalHeaderOffset, boolean needsDiskNumber) throws IOException {
 		Zip64Values values = new Zip64Values(-1L, -1L, -1L);
 		int offset = 0;
 
@@ -296,7 +306,7 @@ final class ZipParser {
 		}
 	}
 
-	private static Timestamps parseTimestamps(byte[] extraBytes, int dosDate, int dosTime) throws IOException {
+	static Timestamps parseTimestamps(byte[] extraBytes, int dosDate, int dosTime) throws IOException {
 		@Nullable FileTime lastModifiedTime = null;
 		@Nullable FileTime lastAccessTime = null;
 		@Nullable FileTime creationTime = null;
@@ -381,7 +391,7 @@ final class ZipParser {
 				| ((data[offset + 7] & 0xFFL) << 56);
 	}
 
-	private static byte[] slice(byte[] data, int offset, int length) {
+	static byte[] slice(byte[] data, int offset, int length) {
 		byte[] slice = new byte[length];
 		System.arraycopy(data, offset, slice, 0, length);
 		return slice;
@@ -393,10 +403,10 @@ final class ZipParser {
 	private record CentralDirectory(long entryCount, long size, long offset) {
 	}
 
-	private record Zip64Values(long uncompressedSize, long compressedSize, long localHeaderOffset) {
+	record Zip64Values(long uncompressedSize, long compressedSize, long localHeaderOffset) {
 	}
 
-	private record Timestamps(@Nullable FileTime lastModifiedTime, @Nullable FileTime lastAccessTime, @Nullable FileTime creationTime) {
+	record Timestamps(@Nullable FileTime lastModifiedTime, @Nullable FileTime lastAccessTime, @Nullable FileTime creationTime) {
 	}
 
 	record EntryData(
@@ -417,5 +427,8 @@ final class ZipParser {
 	}
 
 	record ParsedZip(List<EntryData> entries, long centralDirectoryOffset, long trailingMetadataLength) {
+	}
+
+	record CentralDirectoryData(long entryCount, long size, long offset) {
 	}
 }

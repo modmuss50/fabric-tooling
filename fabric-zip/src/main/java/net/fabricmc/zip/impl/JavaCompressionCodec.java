@@ -29,6 +29,8 @@ import net.fabricmc.zip.api.ZipEntryView;
 public enum JavaCompressionCodec implements CompressionCodec {
 	INSTANCE;
 
+	private static final int INFLATE_BUFFER_SIZE = 16 * 1024;
+
 	@Override
 	public InputStream decompress(ZipEntryView entry, InputStream compressedData) throws IOException {
 		return switch (entry.getMethod()) {
@@ -40,7 +42,7 @@ public enum JavaCompressionCodec implements CompressionCodec {
 
 	private static InputStream newInflaterStream(InputStream compressedData) {
 		Inflater inflater = new Inflater(true);
-		InflaterInputStream inflaterStream = new InflaterInputStream(compressedData, inflater);
+		InflaterInputStream inflaterStream = new InflaterInputStream(compressedData, inflater, INFLATE_BUFFER_SIZE);
 
 		return new FilterInputStream(inflaterStream) {
 			@Override

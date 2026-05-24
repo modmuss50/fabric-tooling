@@ -25,6 +25,7 @@ import java.util.Optional;
 
 import org.jetbrains.annotations.ApiStatus;
 
+import net.fabricmc.zip.impl.LazyPathZipViewImpl;
 import net.fabricmc.zip.impl.ZipViewImpl;
 
 /**
@@ -40,7 +41,7 @@ public interface ZipView extends Closeable {
 	 * @throws IOException if the archive cannot be opened.
 	 */
 	static ZipView open(Path path) throws IOException {
-		return open(ZipByteSource.of(path));
+		return LazyPathZipViewImpl.open(path, CompressionCodec.javaDefault());
 	}
 
 	/**

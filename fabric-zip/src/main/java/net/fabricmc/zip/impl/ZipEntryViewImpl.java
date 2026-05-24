@@ -24,7 +24,7 @@ import net.fabricmc.zip.api.CompressionMethod;
 import net.fabricmc.zip.api.ZipEntryView;
 
 public final class ZipEntryViewImpl implements ZipEntryView {
-	private final ZipViewImpl archive;
+	private final Object archive;
 	private final String name;
 	private final @Nullable String comment;
 	private final CompressionMethod method;
@@ -38,9 +38,10 @@ public final class ZipEntryViewImpl implements ZipEntryView {
 	private final @Nullable FileTime lastModifiedTime;
 	private final @Nullable FileTime lastAccessTime;
 	private final @Nullable FileTime creationTime;
+	private volatile long dataOffset = -1L;
 
 	ZipEntryViewImpl(
-			ZipViewImpl archive,
+			Object archive,
 			String name,
 			@Nullable String comment,
 			CompressionMethod method,
@@ -71,8 +72,16 @@ public final class ZipEntryViewImpl implements ZipEntryView {
 		this.creationTime = creationTime;
 	}
 
-	ZipViewImpl archive() {
+	Object archive() {
 		return archive;
+	}
+
+	long dataOffset() {
+		return dataOffset;
+	}
+
+	void dataOffset(long dataOffset) {
+		this.dataOffset = dataOffset;
 	}
 
 	@Override

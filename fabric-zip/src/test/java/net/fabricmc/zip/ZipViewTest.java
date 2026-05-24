@@ -244,6 +244,25 @@ public class ZipViewTest {
 	}
 
 	@Test
+	void pathBackedViewMaterializesEntriesLazilyAndKeepsDuplicateSemantics() throws Exception {
+		TestZipBuilder builder = new TestZipBuilder();
+		builder.addStored("duplicate.txt", "first".getBytes());
+		builder.addStored("other.txt", "other".getBytes());
+		builder.addStored("duplicate.txt", "second".getBytes());
+		java.nio.file.Path path = java.nio.file.Files.createTempFile("fabric-zip-lazy-", ".zip");
+		java.nio.file.Files.write(path, builder.build());
+
+		try (ZipView view = ZipView.open(path)) {
+			assertEquals("first", new String(readAllBytes(view.open(view.getEntry("duplicate.txt").orElseThrow()))));
+			assertTrue(view.contains("other.txt"));
+			assertEquals(3, view.entries().size());
+			assertEquals("other", new String(readAllBytes(view.open(view.getEntry("other.txt").orElseThrow()))));
+		} finally {
+			java.nio.file.Files.deleteIfExists(path);
+		}
+	}
+
+	@Test
 	void rejectsEntriesFromAnotherArchive() throws Exception {
 		TestZipBuilder firstBuilder = new TestZipBuilder();
 		firstBuilder.addStored("entry.txt", "one".getBytes());

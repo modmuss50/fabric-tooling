@@ -28,7 +28,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 import net.fabricmc.zip.api.CompressionCodec;
-import net.fabricmc.zip.api.MalformedZipException;
 import net.fabricmc.zip.api.ZipByteSource;
 import net.fabricmc.zip.api.ZipEntryView;
 import net.fabricmc.zip.api.ZipView;
@@ -99,18 +98,7 @@ public final class ZipViewImpl implements ZipView {
 
 	private InputStream openRaw(ZipEntryViewImpl entry) throws IOException {
 		ensureOpen();
-
-		byte[] localHeader = new byte[ZipConstants.LOCAL_FILE_HEADER_LENGTH];
-		source.readFully(entry.getLocalHeaderOffset(), localHeader);
-
-		if (ZipParser.readInt(localHeader, 0) != ZipConstants.LOCAL_FILE_HEADER_SIGNATURE) {
-			throw new MalformedZipException("Invalid local file header signature for entry: " + entry.getName());
-		}
-
-		int nameLength = ZipParser.readUnsignedShort(localHeader, 26);
-		int extraLength = ZipParser.readUnsignedShort(localHeader, 28);
-		long dataOffset = entry.getLocalHeaderOffset() + ZipConstants.LOCAL_FILE_HEADER_LENGTH + nameLength + extraLength;
-		return new BoundedInputStream(source, dataOffset, entry.getCompressedSize());
+		return ZipEntryStreams.openRaw(source, entry);
 	}
 
 	private ZipEntryViewImpl requireEntry(ZipEntryView entry) {
