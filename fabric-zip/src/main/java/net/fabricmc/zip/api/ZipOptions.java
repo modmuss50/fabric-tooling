@@ -16,7 +16,6 @@
 
 package net.fabricmc.zip.api;
 
-import java.util.Locale;
 import java.util.Objects;
 import java.util.function.Consumer;
 
@@ -28,15 +27,11 @@ import org.jetbrains.annotations.ApiStatus;
 @ApiStatus.NonExtendable
 public final class ZipOptions {
 	private final boolean reproducible;
-	private final boolean sparse;
-	private final WriteMode writeMode;
 	private final CompressionMethod defaultCompressionMethod;
 	private final CompressionCodec compressionCodec;
 
 	private ZipOptions(Builder builder) {
 		this.reproducible = builder.reproducible;
-		this.sparse = builder.sparse;
-		this.writeMode = builder.writeMode;
 		this.defaultCompressionMethod = builder.defaultCompressionMethod;
 		this.compressionCodec = builder.compressionCodec;
 	}
@@ -48,24 +43,6 @@ public final class ZipOptions {
 	 */
 	public boolean reproducible() {
 		return reproducible;
-	}
-
-	/**
-	 * Returns whether sparse mode is enabled.
-	 *
-	 * @return whether sparse mode is enabled.
-	 */
-	public boolean sparse() {
-		return sparse;
-	}
-
-	/**
-	 * Returns when successful mutations are written to disk.
-	 *
-	 * @return when successful mutations are written to disk.
-	 */
-	public WriteMode writeMode() {
-		return writeMode;
 	}
 
 	/**
@@ -103,8 +80,6 @@ public final class ZipOptions {
 	 */
 	public static final class Builder {
 		private boolean reproducible;
-		private boolean sparse;
-		private WriteMode writeMode = WriteMode.ON_CLOSE;
 		private CompressionMethod defaultCompressionMethod = CompressionMethod.DEFLATED;
 		private CompressionCodec compressionCodec = CompressionCodec.defaultCodec();
 
@@ -122,28 +97,6 @@ public final class ZipOptions {
 		 */
 		public Builder reproducible(boolean reproducible) {
 			this.reproducible = reproducible;
-			return this;
-		}
-
-		/**
-		 * Enables or disables sparse mode.
-		 *
-		 * @param sparse whether sparse mode is enabled.
-		 * @return this builder.
-		 */
-		public Builder sparse(boolean sparse) {
-			this.sparse = sparse;
-			return this;
-		}
-
-		/**
-		 * Sets when successful mutations are written to disk.
-		 *
-		 * @param writeMode the write mode to use.
-		 * @return this builder.
-		 */
-		public Builder writeMode(WriteMode writeMode) {
-			this.writeMode = Objects.requireNonNull(writeMode, "writeMode");
 			return this;
 		}
 
@@ -175,29 +128,13 @@ public final class ZipOptions {
 		 * @return the configured ZIP options.
 		 */
 		public ZipOptions build() {
-			if (reproducible && sparse) {
-				throw new IllegalArgumentException("Reproducible ZIPs are not compatible with sparse mode");
-			}
-
-			if (sparse && writeMode != WriteMode.IMMEDIATE) {
-				throw new IllegalArgumentException("Sparse mode requires writeMode(IMMEDIATE)");
-			}
-
 			if (defaultCompressionMethod != CompressionMethod.STORED && defaultCompressionMethod != CompressionMethod.DEFLATED) {
 				throw new IllegalArgumentException("Unsupported default compression method: " + defaultCompressionMethod);
-			}
-
-			if (sparse && !isMacOs()) {
-				throw new UnsupportedOperationException("Sparse ZIP mode is currently supported on macOS only");
 			}
 
 			Objects.requireNonNull(compressionCodec, "compressionCodec");
 
 			return new ZipOptions(this);
-		}
-
-		private static boolean isMacOs() {
-			return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
 		}
 	}
 }

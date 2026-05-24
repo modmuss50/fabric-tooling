@@ -44,7 +44,6 @@ import org.openjdk.jmh.annotations.TearDown;
 import org.openjdk.jmh.annotations.Warmup;
 import org.openjdk.jmh.infra.Blackhole;
 
-import net.fabricmc.zip.api.WriteMode;
 import net.fabricmc.zip.api.Zip;
 
 @BenchmarkMode(Mode.AverageTime)
@@ -74,19 +73,8 @@ public class ZipModifyBenchmark {
 	}
 
 	@Benchmark
-	public void fabricImmediateModify(ModifyState state, Blackhole blackhole) throws Exception {
+	public void fabricModify(ModifyState state, Blackhole blackhole) throws Exception {
 		try (Zip zip = Zip.open(state.archivePath)) {
-			for (int index = 0; index < BenchmarkArchive.modifyEntryCount(); index++) {
-				zip.replace(BenchmarkArchive.modifyEntryNameForIndex(index), BenchmarkArchive.modifyReplacementData(index));
-			}
-		}
-
-		blackhole.consume(Files.size(state.archivePath));
-	}
-
-	@Benchmark
-	public void fabricSparseModify(ModifyState state, Blackhole blackhole) throws Exception {
-		try (Zip zip = Zip.open(state.archivePath, options -> options.sparse(true).writeMode(WriteMode.IMMEDIATE))) {
 			for (int index = 0; index < BenchmarkArchive.modifyEntryCount(); index++) {
 				zip.replace(BenchmarkArchive.modifyEntryNameForIndex(index), BenchmarkArchive.modifyReplacementData(index));
 			}

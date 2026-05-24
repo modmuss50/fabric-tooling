@@ -38,21 +38,16 @@ import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.function.Consumer;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
 import org.junit.jupiter.api.Assumptions;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledOnOs;
-import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 import net.fabricmc.zip.api.CompressionCodec;
 import net.fabricmc.zip.api.CompressionMethod;
-import net.fabricmc.zip.api.WriteMode;
 import net.fabricmc.zip.api.Zip;
 import net.fabricmc.zip.api.ZipEntryView;
 import net.fabricmc.zip.api.ZipView;
@@ -260,16 +255,12 @@ public class ZipMutableTest {
 	}
 
 	@Test
-	void immediateModeWritesArchiveAfterEachMutation() throws Exception {
-		Path path = tempDir.resolve("immediate.zip");
+	void mutationsAreBufferedUntilClose() throws Exception {
+		Path path = tempDir.resolve("buffered.zip");
 
-		try (Zip zip = Zip.create(path, options -> options.writeMode(WriteMode.IMMEDIATE))) {
+		try (Zip zip = Zip.create(path)) {
 			zip.add("now.txt", "now".getBytes());
-			assertTrue(Files.size(path) > 0);
-
-			try (ZipView diskView = ZipView.open(path)) {
-				assertEquals("now", new String(readAllBytes(diskView.open(diskView.getEntry("now.txt").orElseThrow()))));
-			}
+			assertEquals(0, Files.size(path));
 		}
 
 		assertZipReadableByJava(path, Map.of("now.txt", "now".getBytes()));
@@ -393,7 +384,7 @@ public class ZipMutableTest {
 
 		Files.write(path, builder.build());
 
-		try (Zip zip = Zip.open(path, options -> options.writeMode(WriteMode.IMMEDIATE))) {
+		try (Zip zip = Zip.open(path)) {
 			for (int i = 0; i < 20; i++) {
 				String name = "seed-" + i + ".txt";
 				zip.remove(name);
@@ -418,8 +409,7 @@ public class ZipMutableTest {
 
 	@Test
 	void invalidOptionsAreRejected() {
-		assertThrows(IllegalArgumentException.class, () -> Zip.create(tempDir.resolve("invalid.zip"), options -> options.reproducible(true).sparse(true)));
-		assertThrows(IllegalArgumentException.class, () -> Zip.create(tempDir.resolve("invalid-write-mode.zip"), options -> options.sparse(true)));
+		assertThrows(NullPointerException.class, () -> Zip.create(tempDir.resolve("invalid.zip"), options -> options.compressionCodec(null)));
 	}
 
 	@Test
@@ -440,131 +430,9 @@ public class ZipMutableTest {
 	}
 
 	@Test
-	@EnabledOnOs(OS.MAC)
-	void sparseModeSupportsSmallFileMutations() throws Exception {
-		Path path = tempDir.resolve("sparse-small.zip");
-		LinkedHashMap<String, byte[]> expectedEntries = new LinkedHashMap<>();
-		byte[] alpha = "alpha".getBytes();
-		byte[] beta = "beta".getBytes();
-		byte[] gamma = "gamma".getBytes();
-
-		try (Zip zip = Zip.create(path, options -> options.sparse(true).writeMode(WriteMode.IMMEDIATE))) {
-			zip.add("small/alpha.txt", alpha);
-			zip.add("small/beta.txt", beta);
-			zip.remove("small/alpha.txt");
-			zip.add("small/gamma.txt", gamma);
-
-			expectedEntries.put("small/beta.txt", beta);
-			expectedEntries.put("small/gamma.txt", gamma);
-		}
-
-		try (ZipView view = ZipView.open(path)) {
-			assertFalse(view.contains("small/alpha.txt"));
-			assertArrayEquals(beta, readAllBytes(view.open(view.getEntry("small/beta.txt").orElseThrow())));
-			assertArrayEquals(gamma, readAllBytes(view.open(view.getEntry("small/gamma.txt").orElseThrow())));
-		}
-
-		assertZipReadableByJava(path, expectedEntries);
-	}
-
-	@Test
-	@EnabledOnOs(OS.MAC)
-	void sparseModeSupportsLargeFileMutations() throws Exception {
-		Path path = tempDir.resolve("sparse-large.zip");
-		LinkedHashMap<String, byte[]> expectedEntries = new LinkedHashMap<>();
-		byte[] largeA = new byte[256 * 1024];
-		byte[] largeB = new byte[384 * 1024];
-		byte[] largeC = new byte[512 * 1024];
-
-		fillPattern(largeA, 17);
-		fillPattern(largeB, 29);
-		fillPattern(largeC, 43);
-
-		try (Zip zip = Zip.create(path, options -> options.sparse(true).writeMode(WriteMode.IMMEDIATE))) {
-			zip.add("large/a.bin", largeA);
-			zip.add("large/b.bin", largeB);
-			zip.remove("large/a.bin");
-			zip.add("large/c.bin", largeC);
-
-			expectedEntries.put("large/b.bin", largeB);
-			expectedEntries.put("large/c.bin", largeC);
-		}
-
-		try (ZipView view = ZipView.open(path)) {
-			assertFalse(view.contains("large/a.bin"));
-			assertArrayEquals(largeB, readAllBytes(view.open(view.getEntry("large/b.bin").orElseThrow())));
-			assertArrayEquals(largeC, readAllBytes(view.open(view.getEntry("large/c.bin").orElseThrow())));
-		}
-
-		assertZipReadableByJava(path, expectedEntries);
-	}
-
-	@Test
-	@EnabledOnOs(OS.MAC)
-	void sparseModeReusesFreedSpaceForReplacementEntry() throws Exception {
-		Path path = tempDir.resolve("sparse-reuse.zip");
-		byte[] original = new byte[512 * 1024];
-		byte[] replacement = new byte[160 * 1024];
-		fillPattern(original, 73);
-		fillPattern(replacement, 91);
-
-		long sizeAfterRemove;
-		long sizeAfterReplacement;
-
-		try (Zip zip = Zip.create(path, options -> options.sparse(true).writeMode(WriteMode.IMMEDIATE))) {
-			zip.add("payload.bin", original);
-			zip.remove("payload.bin");
-			sizeAfterRemove = Files.size(path);
-			zip.add("replacement.bin", replacement);
-			sizeAfterReplacement = Files.size(path);
-		}
-
-		assertTrue(sizeAfterReplacement - sizeAfterRemove < 8192, "Replacement entry should reuse freed sparse space");
-		assertZipReadableByJava(path, Map.of("replacement.bin", replacement));
-	}
-
-	@Test
-	@EnabledOnOs(OS.MAC)
-	void sparseModeRebuildsAndCoalescesFreeSpaceAfterReopen() throws Exception {
-		Path path = tempDir.resolve("sparse-coalesce.zip");
-		byte[] first = new byte[192 * 1024];
-		byte[] second = new byte[192 * 1024];
-		byte[] merged = new byte[320 * 1024];
-		fillPattern(first, 7);
-		fillPattern(second, 11);
-		fillPattern(merged, 13);
-
-		try (Zip zip = Zip.create(path, options -> options.sparse(true).writeMode(WriteMode.IMMEDIATE))) {
-			zip.add("first.bin", first);
-			zip.add("second.bin", second);
-			zip.remove("first.bin");
-			zip.remove("second.bin");
-		}
-
-		long sizeAfterReopenRemove = Files.size(path);
-
-		try (Zip zip = Zip.open(path, options -> options.sparse(true).writeMode(WriteMode.IMMEDIATE))) {
-			zip.add("merged.bin", merged);
-		}
-
-		long sizeAfterMerged = Files.size(path);
-		assertTrue(sizeAfterMerged - sizeAfterReopenRemove < 8192, "Merged entry should fit within coalesced sparse free space");
-		assertZipReadableByJava(path, Map.of("merged.bin", merged));
-	}
-
-	@Test
-	@Disabled
-	void immediateModeCanModifyAllEntriesInLargeArchive() throws Exception {
-		Path path = tempDir.resolve("many-immediate.zip");
-		assertLargeArchiveReplaceAllWorks(path, 2_000, options -> options.writeMode(WriteMode.IMMEDIATE));
-	}
-
-	@Test
-	@EnabledOnOs(OS.MAC)
-	@Disabled
-	void sparseModeCanModifyAllEntriesInLargeArchive() throws Exception {
-		Path path = tempDir.resolve("many-sparse.zip");
-		assertLargeArchiveReplaceAllWorks(path, 2_000, options -> options.sparse(true).writeMode(WriteMode.IMMEDIATE));
+	void canModifyAllEntriesInLargeArchive() throws Exception {
+		Path path = tempDir.resolve("many.zip");
+		assertLargeArchiveReplaceAllWorks(path, 2_000);
 	}
 
 	private static Callable<byte[]> readEntry(Zip zip, String name) {
@@ -588,10 +456,10 @@ public class ZipMutableTest {
 		}
 	}
 
-	private void assertLargeArchiveReplaceAllWorks(Path path, int entryCount, Consumer<net.fabricmc.zip.api.ZipOptions.Builder> options) throws Exception {
+	private void assertLargeArchiveReplaceAllWorks(Path path, int entryCount) throws Exception {
 		writeLargeArchive(path, entryCount);
 
-		try (Zip zip = Zip.open(path, options)) {
+		try (Zip zip = Zip.open(path)) {
 			for (int index = 0; index < entryCount; index++) {
 				zip.replace(largeArchiveEntryName(index), largeArchiveReplacementData(index));
 			}
@@ -652,12 +520,6 @@ public class ZipMutableTest {
 		}
 
 		return data;
-	}
-
-	private static void fillPattern(byte[] data, int seed) {
-		for (int i = 0; i < data.length; i++) {
-			data[i] = (byte) (seed + i * 31);
-		}
 	}
 
 	private static LinkedHashMap<String, byte[]> orderedEntries(Object... keyValuePairs) {

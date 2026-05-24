@@ -50,7 +50,6 @@ import net.fabricmc.zip.api.CompressionCodec;
 import net.fabricmc.zip.api.CompressionMethod;
 import net.fabricmc.zip.api.MalformedZipException;
 import net.fabricmc.zip.api.UnsupportedZipFeatureException;
-import net.fabricmc.zip.api.WriteMode;
 import net.fabricmc.zip.api.Zip;
 import net.fabricmc.zip.api.ZipEntryView;
 import net.fabricmc.zip.api.ZipOptions;
@@ -66,14 +65,12 @@ public final class ZipImpl implements Zip {
 	private final FileLock fileLock;
 	private final ZipOptions options;
 	private final CompressionCodec compressionCodec;
-	private final HolePuncher holePuncher;
 	private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 	private final java.util.concurrent.atomic.AtomicBoolean closed = new java.util.concurrent.atomic.AtomicBoolean();
 	private final List<Payload> retiredPayloads = new ArrayList<>();
 
 	private volatile MutableZipSnapshot snapshot;
 	private LinkedHashMap<String, MutableZipEntry> entriesByName;
-	private SparseFreeList sparseFreeList;
 	private long trailingMetadataOffset;
 	private long trailingMetadataLength;
 	private boolean dirty;
@@ -84,7 +81,6 @@ public final class ZipImpl implements Zip {
 			FileLock fileLock,
 			ZipOptions options,
 			LinkedHashMap<String, MutableZipEntry> entriesByName,
-			SparseFreeList sparseFreeList,
 			long trailingMetadataOffset,
 			long trailingMetadataLength,
 			boolean dirty
@@ -94,12 +90,10 @@ public final class ZipImpl implements Zip {
 		this.fileLock = fileLock;
 		this.options = options;
 		this.entriesByName = entriesByName;
-		this.sparseFreeList = sparseFreeList;
 		this.trailingMetadataOffset = trailingMetadataOffset;
 		this.trailingMetadataLength = trailingMetadataLength;
 		this.dirty = dirty;
 		this.compressionCodec = options.compressionCodec();
-		this.holePuncher = HolePuncher.systemDefault();
 		this.snapshot = MutableZipSnapshot.create(this, entriesByName.values());
 	}
 
@@ -113,15 +107,7 @@ public final class ZipImpl implements Zip {
 
 		try {
 			fileLock = tryLock(channel, normalizedPath);
-			ZipImpl zip = new ZipImpl(normalizedPath, channel, fileLock, options, new LinkedHashMap<>(), SparseFreeList.empty(), 0L, 0L, true);
-
-			if (options.writeMode() == WriteMode.IMMEDIATE) {
-				zip.persistFull(zip.entriesByName);
-				zip.dirty = false;
-				zip.sparseFreeList = zip.rebuildSparseFreeList();
-				zip.snapshot = MutableZipSnapshot.create(zip, zip.entriesByName.values());
-			}
-
+			ZipImpl zip = new ZipImpl(normalizedPath, channel, fileLock, options, new LinkedHashMap<>(), 0L, 0L, true);
 			success = true;
 			return zip;
 		} finally {
@@ -153,7 +139,6 @@ public final class ZipImpl implements Zip {
 					fileLock,
 					options,
 					loadedArchive.entriesByName(),
-					SparseFreeList.rebuild(channel.size(), loadedArchive.entriesByName().values(), loadedArchive.trailingMetadataOffset(), loadedArchive.trailingMetadataLength()),
 					loadedArchive.trailingMetadataOffset(),
 					loadedArchive.trailingMetadataLength(),
 					false
@@ -415,32 +400,19 @@ public final class ZipImpl implements Zip {
 		}
 	}
 
-	private void commitUpdatedEntries(LinkedHashMap<String, MutableZipEntry> updatedEntries, List<Payload> retired) throws IOException {
+	private void commitUpdatedEntries(LinkedHashMap<String, MutableZipEntry> updatedEntries, List<Payload> retired) {
 		LinkedHashMap<String, MutableZipEntry> previousEntries = entriesByName;
-		SparseFreeList previousSparseFreeList = sparseFreeList;
 		long previousTrailingMetadataOffset = trailingMetadataOffset;
 		long previousTrailingMetadataLength = trailingMetadataLength;
 		boolean previousDirty = dirty;
 
 		try {
-			if (options.writeMode() == WriteMode.IMMEDIATE) {
-				if (options.sparse()) {
-					persistSparse(previousEntries, updatedEntries);
-				} else {
-					persistFull(updatedEntries);
-				}
-
-				dirty = false;
-			} else {
-				dirty = true;
-			}
-
+			dirty = true;
 			entriesByName = updatedEntries;
 			retiredPayloads.addAll(retired);
 			snapshot = MutableZipSnapshot.create(this, updatedEntries.values());
-		} catch (IOException | RuntimeException error) {
+		} catch (RuntimeException error) {
 			entriesByName = previousEntries;
-			sparseFreeList = previousSparseFreeList;
 			trailingMetadataOffset = previousTrailingMetadataOffset;
 			trailingMetadataLength = previousTrailingMetadataLength;
 			dirty = previousDirty;
@@ -564,163 +536,6 @@ public final class ZipImpl implements Zip {
 		channel.force(true);
 		trailingMetadataOffset = centralDirectoryOffset;
 		trailingMetadataLength = position - centralDirectoryOffset;
-	}
-
-	private void persistSparse(LinkedHashMap<String, MutableZipEntry> previousEntries, LinkedHashMap<String, MutableZipEntry> updatedEntries) throws IOException {
-		SparseFreeList freeList = sparseFreeList.copy();
-		List<SparseFreeList.Range> punchCandidates = new ArrayList<>();
-		long position = channel.size();
-		long previousMetadataOffset = trailingMetadataOffset;
-		long previousMetadataLength = trailingMetadataLength;
-
-		recordDeadRange(freeList, previousMetadataOffset, previousMetadataLength);
-
-		for (java.util.Map.Entry<String, MutableZipEntry> entry : previousEntries.entrySet()) {
-			MutableZipEntry updatedEntry = updatedEntries.get(entry.getKey());
-
-			if (updatedEntry == null || updatedEntry != entry.getValue()) {
-				recordDeadRange(freeList, entry.getValue().localHeaderOffset, entry.getValue().localRecordLength);
-
-				if (updatedEntry == null) {
-					punchCandidates.add(new SparseFreeList.Range(entry.getValue().localHeaderOffset, entry.getValue().localRecordLength));
-				}
-			}
-		}
-
-		for (MutableZipEntry entry : orderedEntries(updatedEntries.values())) {
-			if (entry.localHeaderOffset >= 0) {
-				continue;
-			}
-
-			MutableZipEntry previousEntry = previousEntries.get(entry.name);
-			long localHeaderOffset = allocateSparseOffset(freeList, entry, previousEntry, position);
-			LocalHeaderData localHeaderData = buildLocalHeader(entry, localHeaderOffset);
-			long recordLength = localHeaderData.header().length + entry.compressedSize;
-			boolean appended = localHeaderOffset == position;
-
-			if (appended) {
-				position = writeBytes(channel, position, localHeaderData.header());
-			} else {
-				freeList.allocate(localHeaderOffset, recordLength);
-				writeBytes(channel, localHeaderOffset, localHeaderData.header());
-			}
-
-			try (InputStream inputStream = entry.payload.openStream()) {
-				long dataOffset = localHeaderOffset + localHeaderData.header().length;
-				long end = transferToChannel(inputStream, channel, dataOffset);
-
-				if (appended) {
-					position = end;
-				}
-			}
-
-			entry.localHeaderOffset = localHeaderOffset;
-			entry.localRecordLength = recordLength;
-		}
-
-		long centralDirectoryOffset = position;
-		position = writeCentralDirectory(channel, orderedEntries(updatedEntries.values()), position);
-		channel.truncate(position);
-		channel.force(true);
-
-		for (SparseFreeList.Range range : intersectFreeRanges(punchCandidates, freeList.ranges())) {
-			if (shouldPunch(range.length())) {
-				holePuncher.punch(path, range.offset(), range.length());
-			}
-		}
-
-		sparseFreeList = freeList;
-		trailingMetadataOffset = centralDirectoryOffset;
-		trailingMetadataLength = position - centralDirectoryOffset;
-	}
-
-	private static void recordDeadRange(SparseFreeList freeList, long offset, long length) {
-		if (offset < 0 || length <= 0) {
-			return;
-		}
-
-		freeList.free(offset, length);
-	}
-
-	private static List<SparseFreeList.Range> intersectFreeRanges(List<SparseFreeList.Range> deadRanges, List<SparseFreeList.Range> freeRanges) {
-		List<SparseFreeList.Range> punchRanges = new ArrayList<>();
-		int freeIndex = 0;
-
-		for (SparseFreeList.Range deadRange : deadRanges) {
-			while (freeIndex < freeRanges.size() && freeRanges.get(freeIndex).end() <= deadRange.offset()) {
-				freeIndex++;
-			}
-
-			int currentFreeIndex = freeIndex;
-
-			while (currentFreeIndex < freeRanges.size() && freeRanges.get(currentFreeIndex).offset() < deadRange.end()) {
-				SparseFreeList.Range freeRange = freeRanges.get(currentFreeIndex);
-				long start = Math.max(deadRange.offset(), freeRange.offset());
-				long end = Math.min(deadRange.end(), freeRange.end());
-
-				if (end > start) {
-					punchRanges.add(new SparseFreeList.Range(start, end - start));
-				}
-
-				if (freeRange.end() >= deadRange.end()) {
-					break;
-				}
-
-				currentFreeIndex++;
-			}
-		}
-
-		return punchRanges;
-	}
-
-	private SparseFreeList rebuildSparseFreeList() throws IOException {
-		return SparseFreeList.rebuild(channel.size(), entriesByName.values(), trailingMetadataOffset, trailingMetadataLength);
-	}
-
-	private boolean shouldPunch(long length) {
-		return length >= holePuncher.minimumHoleLength();
-	}
-
-	private long allocateSparseOffset(SparseFreeList freeList, MutableZipEntry entry, @Nullable MutableZipEntry previousEntry, long appendOffset) {
-		if (previousEntry != null && previousEntry.localHeaderOffset >= 0) {
-			long recordLength = localRecordLength(entry, previousEntry.localHeaderOffset);
-
-			if (previousEntry.localRecordLength >= recordLength && isFreeRange(freeList, previousEntry.localHeaderOffset, recordLength)) {
-				return previousEntry.localHeaderOffset;
-			}
-		}
-
-		SparseFreeList.Range bestFit = null;
-		long bestLength = Long.MAX_VALUE;
-
-		for (SparseFreeList.Range range : freeList.ranges()) {
-			long recordLength = localRecordLength(entry, range.offset());
-
-			if (range.length() >= recordLength && range.length() < bestLength) {
-				bestFit = range;
-				bestLength = range.length();
-			}
-		}
-
-		return bestFit != null ? bestFit.offset() : appendOffset;
-	}
-
-	private static boolean isFreeRange(SparseFreeList freeList, long offset, long length) {
-		for (SparseFreeList.Range range : freeList.ranges()) {
-			if (range.offset() > offset) {
-				return false;
-			}
-
-			if (range.offset() <= offset && range.end() >= offset + length) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	private static long localRecordLength(MutableZipEntry entry, long localHeaderOffset) {
-		return buildLocalHeader(entry, localHeaderOffset).header().length + entry.compressedSize;
 	}
 
 	private long writeCentralDirectory(FileChannel channel, List<MutableZipEntry> entries, long position) throws IOException {

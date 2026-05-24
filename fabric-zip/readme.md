@@ -19,12 +19,8 @@ The current implementation supports both read-only access and mutable local-file
   - `modify(String, Function<byte[], byte[]>)` for atomic read-transform-write updates
 - `ZipOptions` controls mutable ZIP behavior:
   - `reproducible`
-  - `sparse`
-  - `writeMode`
   - `defaultCompressionMethod`
-- `WriteMode` controls when mutations are persisted:
-  - `ON_CLOSE` buffers changes until the ZIP is closed
-  - `IMMEDIATE` writes changes back to disk after each mutation
+  - `compressionCodec`
 - `ZipEntryView` exposes entry metadata such as name, sizes, offsets, CRC, flags, timestamps, and `CompressionMethod`.
 - `ZipByteSource` is the random-access storage abstraction used by the implementation.
   The default implementation is path-backed, but the design leaves room for other backends later.
@@ -46,19 +42,17 @@ For mutable ZIPs, reads must continue to work correctly while mutations are happ
 - Raw compressed entry reads and inflated entry reads
 - Add, remove, and raw-copy entry mutation operations
 - Reproducible output mode with fixed timestamps and stable entry ordering
-- Immediate-write and on-close-write persistence modes
+- Buffered mutable updates that are written when the ZIP is closed
 - Shared path-based ZIP references
-- macOS sparse-file support for mutable ZIPs
 
 ## Internal structure
 
 Public API types live in `net.fabricmc.zip.api`.
-Implementation details, parsing logic, writer logic, backend code, snapshot state, and platform-specific sparse helpers live in `net.fabricmc.zip.impl`.
+Implementation details, parsing logic, writer logic, backend code, and snapshot state live in `net.fabricmc.zip.impl`.
 
 ## Notes
 
 - Mutable ZIPs currently assume local filesystem storage and take an exclusive file lock while open for mutation.
-- Sparse mode is currently macOS-only and routed through an OS-specific hole-punch implementation.
 - `ZipReference` remains read-only; it is not used for mutable ZIP sharing.
 
 ## Benchmarks
