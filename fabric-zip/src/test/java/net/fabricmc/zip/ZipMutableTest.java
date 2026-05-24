@@ -30,8 +30,8 @@ import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
-import java.nio.file.StandardOpenOption;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -550,7 +550,7 @@ public class ZipMutableTest {
 	}
 
 	private void assertLargeArchiveReplaceAllWorks(Path path, int entryCount, Consumer<net.fabricmc.zip.api.ZipOptions.Builder> options) throws Exception {
-		writeLargeArchiveWithFabric(path, entryCount, options);
+		writeLargeArchive(path, entryCount);
 
 		try (Zip zip = Zip.open(path, options)) {
 			for (int index = 0; index < entryCount; index++) {
@@ -581,10 +581,12 @@ public class ZipMutableTest {
 		}
 	}
 
-	private static void writeLargeArchiveWithFabric(Path path, int entryCount, Consumer<net.fabricmc.zip.api.ZipOptions.Builder> options) throws IOException {
-		try (Zip zip = Zip.create(path, options)) {
+	private static void writeLargeArchive(Path path, int entryCount) throws IOException {
+		try (ZipOutputStream outputStream = new ZipOutputStream(Files.newOutputStream(path, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING))) {
 			for (int index = 0; index < entryCount; index++) {
-				zip.add(largeArchiveEntryName(index), largeArchiveEntryData(index));
+				outputStream.putNextEntry(new ZipEntry(largeArchiveEntryName(index)));
+				outputStream.write(largeArchiveEntryData(index));
+				outputStream.closeEntry();
 			}
 		}
 	}

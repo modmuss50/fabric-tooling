@@ -570,16 +570,32 @@ public final class ZipImpl implements Zip {
 
 	private void persistSparse(LinkedHashMap<String, MutableZipEntry> previousEntries, LinkedHashMap<String, MutableZipEntry> updatedEntries) throws IOException {
 		SparseFreeList freeList = sparseFreeList.copy();
+		List<SparseFreeList.Range> punchCandidates = new ArrayList<>();
 		long position = channel.size();
 		long previousMetadataOffset = trailingMetadataOffset;
 		long previousMetadataLength = trailingMetadataLength;
+
+		recordDeadRange(freeList, previousMetadataOffset, previousMetadataLength);
+
+		for (java.util.Map.Entry<String, MutableZipEntry> entry : previousEntries.entrySet()) {
+			MutableZipEntry updatedEntry = updatedEntries.get(entry.getKey());
+
+			if (updatedEntry == null || updatedEntry != entry.getValue()) {
+				recordDeadRange(freeList, entry.getValue().localHeaderOffset, entry.getValue().localRecordLength);
+
+				if (updatedEntry == null) {
+					punchCandidates.add(new SparseFreeList.Range(entry.getValue().localHeaderOffset, entry.getValue().localRecordLength));
+				}
+			}
+		}
 
 		for (MutableZipEntry entry : orderedEntries(updatedEntries.values())) {
 			if (entry.localHeaderOffset >= 0) {
 				continue;
 			}
 
-			long localHeaderOffset = allocateSparseOffset(freeList, entry, position);
+			MutableZipEntry previousEntry = previousEntries.get(entry.name);
+			long localHeaderOffset = allocateSparseOffset(freeList, entry, previousEntry, position);
 			LocalHeaderData localHeaderData = buildLocalHeader(entry, localHeaderOffset);
 			long recordLength = localHeaderData.header().length + entry.compressedSize;
 			boolean appended = localHeaderOffset == position;
@@ -609,25 +625,54 @@ public final class ZipImpl implements Zip {
 		channel.truncate(position);
 		channel.force(true);
 
-		freeList.free(previousMetadataOffset, previousMetadataLength);
-
-		if (shouldPunch(previousMetadataLength)) {
-			holePuncher.punch(path, previousMetadataOffset, previousMetadataLength);
-		}
-
-		for (java.util.Map.Entry<String, MutableZipEntry> entry : previousEntries.entrySet()) {
-			if (!updatedEntries.containsKey(entry.getKey())) {
-				freeList.free(entry.getValue().localHeaderOffset, entry.getValue().localRecordLength);
-
-				if (shouldPunch(entry.getValue().localRecordLength)) {
-					holePuncher.punch(path, entry.getValue().localHeaderOffset, entry.getValue().localRecordLength);
-				}
+		for (SparseFreeList.Range range : intersectFreeRanges(punchCandidates, freeList.ranges())) {
+			if (shouldPunch(range.length())) {
+				holePuncher.punch(path, range.offset(), range.length());
 			}
 		}
 
 		sparseFreeList = freeList;
 		trailingMetadataOffset = centralDirectoryOffset;
 		trailingMetadataLength = position - centralDirectoryOffset;
+	}
+
+	private static void recordDeadRange(SparseFreeList freeList, long offset, long length) {
+		if (offset < 0 || length <= 0) {
+			return;
+		}
+
+		freeList.free(offset, length);
+	}
+
+	private static List<SparseFreeList.Range> intersectFreeRanges(List<SparseFreeList.Range> deadRanges, List<SparseFreeList.Range> freeRanges) {
+		List<SparseFreeList.Range> punchRanges = new ArrayList<>();
+		int freeIndex = 0;
+
+		for (SparseFreeList.Range deadRange : deadRanges) {
+			while (freeIndex < freeRanges.size() && freeRanges.get(freeIndex).end() <= deadRange.offset()) {
+				freeIndex++;
+			}
+
+			int currentFreeIndex = freeIndex;
+
+			while (currentFreeIndex < freeRanges.size() && freeRanges.get(currentFreeIndex).offset() < deadRange.end()) {
+				SparseFreeList.Range freeRange = freeRanges.get(currentFreeIndex);
+				long start = Math.max(deadRange.offset(), freeRange.offset());
+				long end = Math.min(deadRange.end(), freeRange.end());
+
+				if (end > start) {
+					punchRanges.add(new SparseFreeList.Range(start, end - start));
+				}
+
+				if (freeRange.end() >= deadRange.end()) {
+					break;
+				}
+
+				currentFreeIndex++;
+			}
+		}
+
+		return punchRanges;
 	}
 
 	private SparseFreeList rebuildSparseFreeList() throws IOException {
@@ -638,7 +683,15 @@ public final class ZipImpl implements Zip {
 		return length >= holePuncher.minimumHoleLength();
 	}
 
-	private long allocateSparseOffset(SparseFreeList freeList, MutableZipEntry entry, long appendOffset) {
+	private long allocateSparseOffset(SparseFreeList freeList, MutableZipEntry entry, @Nullable MutableZipEntry previousEntry, long appendOffset) {
+		if (previousEntry != null && previousEntry.localHeaderOffset >= 0) {
+			long recordLength = localRecordLength(entry, previousEntry.localHeaderOffset);
+
+			if (previousEntry.localRecordLength >= recordLength && isFreeRange(freeList, previousEntry.localHeaderOffset, recordLength)) {
+				return previousEntry.localHeaderOffset;
+			}
+		}
+
 		SparseFreeList.Range bestFit = null;
 		long bestLength = Long.MAX_VALUE;
 
@@ -652,6 +705,20 @@ public final class ZipImpl implements Zip {
 		}
 
 		return bestFit != null ? bestFit.offset() : appendOffset;
+	}
+
+	private static boolean isFreeRange(SparseFreeList freeList, long offset, long length) {
+		for (SparseFreeList.Range range : freeList.ranges()) {
+			if (range.offset() > offset) {
+				return false;
+			}
+
+			if (range.offset() <= offset && range.end() >= offset + length) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	private static long localRecordLength(MutableZipEntry entry, long localHeaderOffset) {

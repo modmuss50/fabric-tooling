@@ -49,7 +49,11 @@ enum MacOsHolePuncher implements HolePuncher {
 
 	@Override
 	public void punch(Path path, long offset, long length) throws IOException {
-		if (length <= 0) {
+		long alignedOffset = alignUp(offset, MINIMUM_HOLE_LENGTH);
+		long alignedEnd = alignDown(offset + length, MINIMUM_HOLE_LENGTH);
+		long alignedLength = alignedEnd - alignedOffset;
+
+		if (alignedLength < MINIMUM_HOLE_LENGTH) {
 			return;
 		}
 
@@ -64,8 +68,8 @@ enum MacOsHolePuncher implements HolePuncher {
 				MemorySegment hole = arena.allocate(FPUNCHHOLE_LAYOUT);
 				hole.set(java.lang.foreign.ValueLayout.JAVA_INT, 0, 0);
 				hole.set(java.lang.foreign.ValueLayout.JAVA_INT, Integer.BYTES, 0);
-				hole.set(java.lang.foreign.ValueLayout.JAVA_LONG, 8, offset);
-				hole.set(java.lang.foreign.ValueLayout.JAVA_LONG, 16, length);
+				hole.set(java.lang.foreign.ValueLayout.JAVA_LONG, 8, alignedOffset);
+				hole.set(java.lang.foreign.ValueLayout.JAVA_LONG, 16, alignedLength);
 				int result = (int) FCNTL.invokeExact(fd, F_PUNCHHOLE, hole);
 
 				if (result != 0) {
@@ -98,5 +102,14 @@ enum MacOsHolePuncher implements HolePuncher {
 		SymbolLookup lookup = Linker.nativeLinker().defaultLookup();
 		MemorySegment symbol = lookup.find(symbolName).orElseThrow(() -> new IllegalStateException("Missing native symbol: " + symbolName));
 		return Linker.nativeLinker().downcallHandle(symbol, functionDescriptor);
+	}
+
+	private static long alignUp(long value, long alignment) {
+		long remainder = value % alignment;
+		return remainder == 0 ? value : value + (alignment - remainder);
+	}
+
+	private static long alignDown(long value, long alignment) {
+		return value - (value % alignment);
 	}
 }
