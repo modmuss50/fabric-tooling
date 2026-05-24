@@ -30,14 +30,17 @@ import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.function.Consumer;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import java.util.zip.ZipOutputStream;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
@@ -529,8 +532,85 @@ public class ZipMutableTest {
 		assertZipReadableByJava(path, Map.of("merged.bin", merged));
 	}
 
+	@Test
+	void immediateModeCanModifyAllEntriesInLargeArchive() throws Exception {
+		Path path = tempDir.resolve("many-immediate.zip");
+		assertLargeArchiveReplaceAllWorks(path, 2_000, options -> options.writeMode(WriteMode.IMMEDIATE));
+	}
+
+	@Test
+	@EnabledOnOs(OS.MAC)
+	void sparseModeCanModifyAllEntriesInLargeArchive() throws Exception {
+		Path path = tempDir.resolve("many-sparse.zip");
+		assertLargeArchiveReplaceAllWorks(path, 2_000, options -> options.sparse(true).writeMode(WriteMode.IMMEDIATE));
+	}
+
 	private static Callable<byte[]> readEntry(Zip zip, String name) {
 		return () -> readAllBytes(zip.open(zip.getEntry(name).orElseThrow()));
+	}
+
+	private void assertLargeArchiveReplaceAllWorks(Path path, int entryCount, Consumer<net.fabricmc.zip.api.ZipOptions.Builder> options) throws Exception {
+		writeLargeArchiveWithFabric(path, entryCount, options);
+
+		try (Zip zip = Zip.open(path, options)) {
+			for (int index = 0; index < entryCount; index++) {
+				zip.replace(largeArchiveEntryName(index), largeArchiveReplacementData(index));
+			}
+
+			assertEquals(entryCount, zip.entries().size());
+			assertArrayEquals(largeArchiveReplacementData(0), readAllBytes(zip.open(zip.getEntry(largeArchiveEntryName(0)).orElseThrow())));
+			assertArrayEquals(largeArchiveReplacementData(25), readAllBytes(zip.open(zip.getEntry(largeArchiveEntryName(25)).orElseThrow())));
+			assertArrayEquals(largeArchiveReplacementData(entryCount - 223), readAllBytes(zip.open(zip.getEntry(largeArchiveEntryName(entryCount - 223)).orElseThrow())));
+			assertArrayEquals(largeArchiveReplacementData(entryCount - 1), readAllBytes(zip.open(zip.getEntry(largeArchiveEntryName(entryCount - 1)).orElseThrow())));
+		}
+
+		try (ZipView view = ZipView.open(path)) {
+			assertEquals(entryCount, view.entries().size());
+			assertArrayEquals(largeArchiveReplacementData(0), readAllBytes(view.open(view.getEntry(largeArchiveEntryName(0)).orElseThrow())));
+			assertArrayEquals(largeArchiveReplacementData(25), readAllBytes(view.open(view.getEntry(largeArchiveEntryName(25)).orElseThrow())));
+			assertArrayEquals(largeArchiveReplacementData(entryCount - 223), readAllBytes(view.open(view.getEntry(largeArchiveEntryName(entryCount - 223)).orElseThrow())));
+			assertArrayEquals(largeArchiveReplacementData(entryCount - 1), readAllBytes(view.open(view.getEntry(largeArchiveEntryName(entryCount - 1)).orElseThrow())));
+		}
+
+		try (ZipFile zipFile = new ZipFile(path.toFile())) {
+			assertEquals(entryCount, zipFile.size());
+			assertArrayEquals(largeArchiveReplacementData(0), readAllBytes(zipFile.getInputStream(zipFile.getEntry(largeArchiveEntryName(0)))));
+			assertArrayEquals(largeArchiveReplacementData(25), readAllBytes(zipFile.getInputStream(zipFile.getEntry(largeArchiveEntryName(25)))));
+			assertArrayEquals(largeArchiveReplacementData(entryCount - 223), readAllBytes(zipFile.getInputStream(zipFile.getEntry(largeArchiveEntryName(entryCount - 223)))));
+			assertArrayEquals(largeArchiveReplacementData(entryCount - 1), readAllBytes(zipFile.getInputStream(zipFile.getEntry(largeArchiveEntryName(entryCount - 1)))));
+		}
+	}
+
+	private static void writeLargeArchiveWithFabric(Path path, int entryCount, Consumer<net.fabricmc.zip.api.ZipOptions.Builder> options) throws IOException {
+		try (Zip zip = Zip.create(path, options)) {
+			for (int index = 0; index < entryCount; index++) {
+				zip.add(largeArchiveEntryName(index), largeArchiveEntryData(index));
+			}
+		}
+	}
+
+	private static String largeArchiveEntryName(int index) {
+		return "large/entry-%05d.bin".formatted(index);
+	}
+
+	private static byte[] largeArchiveEntryData(int index) {
+		byte[] data = new byte[96 + (index % 6) * 19];
+
+		for (int offset = 0; offset < data.length; offset++) {
+			data[offset] = (byte) (index * 17 + offset * 11);
+		}
+
+		return data;
+	}
+
+	private static byte[] largeArchiveReplacementData(int index) {
+		byte[] data = new byte[213 + (index % 4) * 9];
+
+		for (int offset = 0; offset < data.length; offset++) {
+			data[offset] = (byte) (0x6D - index * 5 - offset * 9);
+		}
+
+		return data;
 	}
 
 	private static void fillPattern(byte[] data, int seed) {

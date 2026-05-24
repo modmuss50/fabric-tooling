@@ -24,6 +24,7 @@ import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Enumeration;
 import java.util.List;
+import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
@@ -31,6 +32,9 @@ import java.util.zip.ZipOutputStream;
 import net.fabricmc.zip.api.ZipEntryView;
 
 public final class BenchmarkArchive {
+	private static final int MODIFY_ENTRY_COUNT = 10_000;
+	private static final int MODIFY_PAYLOAD_SIZE = 128;
+
 	final Path tempDir;
 	final Path archivePath;
 	final String targetName;
@@ -60,23 +64,7 @@ public final class BenchmarkArchive {
 	}
 
 	void delete() throws IOException {
-		Files.walkFileTree(tempDir, new SimpleFileVisitor<>() {
-			@Override
-			public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-				Files.deleteIfExists(file);
-				return FileVisitResult.CONTINUE;
-			}
-
-			@Override
-			public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
-				if (exc != null) {
-					throw exc;
-				}
-
-				Files.deleteIfExists(dir);
-				return FileVisitResult.CONTINUE;
-			}
-		});
+		deleteRecursively(tempDir);
 	}
 
 	public enum ArchiveShape {
@@ -156,5 +144,74 @@ public final class BenchmarkArchive {
 		try (inputStream) {
 			return inputStream.readAllBytes();
 		}
+	}
+
+	static void writeModifyArchive(Path archivePath) throws IOException {
+		try (ZipOutputStream outputStream = new ZipOutputStream(Files.newOutputStream(archivePath))) {
+			for (int index = 0; index < MODIFY_ENTRY_COUNT; index++) {
+				ZipEntry entry = new ZipEntry(modifyEntryName(index));
+				outputStream.putNextEntry(entry);
+				outputStream.write(modifyEntryData(index));
+				outputStream.closeEntry();
+			}
+		}
+	}
+
+	static int modifyEntryCount() {
+		return MODIFY_ENTRY_COUNT;
+	}
+
+	static String modifyEntryNameForIndex(int index) {
+		return modifyEntryName(index);
+	}
+
+	static byte[] modifyReplacementData(int index) {
+		byte[] data = new byte[MODIFY_PAYLOAD_SIZE + 37 + (index % 3) * 11];
+
+		for (int offset = 0; offset < data.length; offset++) {
+			data[offset] = (byte) (0x5A - index * 13 - offset * 3);
+		}
+
+		return data;
+	}
+
+	static long crc32(byte[] data) {
+		CRC32 crc32 = new CRC32();
+		crc32.update(data);
+		return crc32.getValue();
+	}
+
+	static void deleteRecursively(Path root) throws IOException {
+		Files.walkFileTree(root, new SimpleFileVisitor<>() {
+			@Override
+			public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+				Files.deleteIfExists(file);
+				return FileVisitResult.CONTINUE;
+			}
+
+			@Override
+			public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+				if (exc != null) {
+					throw exc;
+				}
+
+				Files.deleteIfExists(dir);
+				return FileVisitResult.CONTINUE;
+			}
+		});
+	}
+
+	private static String modifyEntryName(int index) {
+		return "modify/entry-%05d.bin".formatted(index);
+	}
+
+	private static byte[] modifyEntryData(int index) {
+		byte[] data = new byte[MODIFY_PAYLOAD_SIZE + (index % 5) * 16];
+
+		for (int offset = 0; offset < data.length; offset++) {
+			data[offset] = (byte) (index * 19 + offset * 7);
+		}
+
+		return data;
 	}
 }

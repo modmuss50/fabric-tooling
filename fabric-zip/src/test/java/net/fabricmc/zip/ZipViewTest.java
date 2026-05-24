@@ -263,6 +263,29 @@ public class ZipViewTest {
 	}
 
 	@Test
+	void pathBackedViewUsesIndexedLookupAcrossCharsetsAndLateEntries() throws Exception {
+		TestZipBuilder builder = new TestZipBuilder();
+		builder.addStored("shared.txt", "legacy-first".getBytes()).utf8(false);
+
+		for (int index = 0; index < 256; index++) {
+			builder.addStored("filler/%03d.txt".formatted(index), ("value-" + index).getBytes());
+		}
+
+		builder.addStored("unicodé.txt", "utf8".getBytes());
+		builder.addStored("shared.txt", "utf8-second".getBytes());
+		java.nio.file.Path path = java.nio.file.Files.createTempFile("fabric-zip-index-", ".zip");
+		java.nio.file.Files.write(path, builder.build());
+
+		try (ZipView view = ZipView.open(path)) {
+			assertEquals("legacy-first", new String(readAllBytes(view.open(view.getEntry("shared.txt").orElseThrow()))));
+			assertEquals("utf8", new String(readAllBytes(view.open(view.getEntry("unicodé.txt").orElseThrow()))));
+			assertEquals("value-255", new String(readAllBytes(view.open(view.getEntry("filler/255.txt").orElseThrow()))));
+		} finally {
+			java.nio.file.Files.deleteIfExists(path);
+		}
+	}
+
+	@Test
 	void rejectsEntriesFromAnotherArchive() throws Exception {
 		TestZipBuilder firstBuilder = new TestZipBuilder();
 		firstBuilder.addStored("entry.txt", "one".getBytes());

@@ -238,15 +238,20 @@ final class ZipParser {
 	}
 
 	static Zip64Values parseZip64Extra(byte[] extraBytes, boolean needsUncompressedSize, boolean needsCompressedSize, boolean needsLocalHeaderOffset, boolean needsDiskNumber) throws IOException {
-		Zip64Values values = new Zip64Values(-1L, -1L, -1L);
-		int offset = 0;
+		return parseZip64Extra(extraBytes, 0, extraBytes.length, needsUncompressedSize, needsCompressedSize, needsLocalHeaderOffset, needsDiskNumber);
+	}
 
-		while (offset + 4 <= extraBytes.length) {
+	static Zip64Values parseZip64Extra(byte[] extraBytes, int extraOffset, int extraLength, boolean needsUncompressedSize, boolean needsCompressedSize, boolean needsLocalHeaderOffset, boolean needsDiskNumber) throws IOException {
+		Zip64Values values = new Zip64Values(-1L, -1L, -1L);
+		int offset = extraOffset;
+		int endOffset = extraOffset + extraLength;
+
+		while (offset + 4 <= endOffset) {
 			int headerId = readUnsignedShort(extraBytes, offset);
 			int dataSize = readUnsignedShort(extraBytes, offset + 2);
 			offset += 4;
 
-			if (offset + dataSize > extraBytes.length) {
+			if (offset + dataSize > endOffset) {
 				throw new MalformedZipException("Truncated ZIP extra field");
 			}
 
@@ -307,18 +312,23 @@ final class ZipParser {
 	}
 
 	static Timestamps parseTimestamps(byte[] extraBytes, int dosDate, int dosTime) throws IOException {
+		return parseTimestamps(extraBytes, 0, extraBytes.length, dosDate, dosTime);
+	}
+
+	static Timestamps parseTimestamps(byte[] extraBytes, int extraOffset, int extraLength, int dosDate, int dosTime) throws IOException {
 		@Nullable FileTime lastModifiedTime = null;
 		@Nullable FileTime lastAccessTime = null;
 		@Nullable FileTime creationTime = null;
 
-		int offset = 0;
+		int offset = extraOffset;
+		int endOffset = extraOffset + extraLength;
 
-		while (offset + 4 <= extraBytes.length) {
+		while (offset + 4 <= endOffset) {
 			int headerId = readUnsignedShort(extraBytes, offset);
 			int dataSize = readUnsignedShort(extraBytes, offset + 2);
 			offset += 4;
 
-			if (offset + dataSize > extraBytes.length) {
+			if (offset + dataSize > endOffset) {
 				throw new MalformedZipException("Truncated ZIP extra field");
 			}
 
